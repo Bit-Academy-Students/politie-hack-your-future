@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+"""Flag incomplete Scrum stories in an organisation GitHub Project."""
+
+import datetime as dt
+import json
+import os
+import subprocess
+import sys
+
+OWNER = os.environ["PROJECT_OWNER"]
+BACKLOG_STATUS = os.environ.get("BACKLOG_STATUS", "Backlog")
+DONE_STATUS = os.environ.get("DONE_STATUS", "Done")
+SPRINT_STATUSES = {
+    value.strip() for value in os.environ.get(
+        "SPRINT_STATUSES", "Sprint (To do),In progress,In review"
+    ).split(",")
+}
+
+QUERY = """
+query($owner: String!, $number: Int!) {
+  organization(login: $owner) {
+    projectV2(number: $number) {
+      items(first: 100) {
+        nodes {
+          id
+          type
+          content {
+            ... on Issue {
+              number
+              body
+              repository { nameWithOwner }
+              assignees(first: 1) { totalCount }
+              issueFieldValues(first: 20) {
+                nodes {
+                  ... on IssueFieldSingleSelectValue { name field { ... on IssueFieldCommon { name } } }
+                  ... on IssueFieldNumberValue { value field { ... on IssueFieldCommon { name } } }
+                }
+              }
+            }
+          }
+          fieldValues(first: 30) {
+            nodes {
+              ... on ProjectV2ItemFieldSingleSelectValue { 
+                name 
+                field { ... on ProjectV2FieldCommon { name } } 
+              }
+              ... on ProjectV2ItemFieldNumberValue { 
+                number
+                field { ... on ProjectV2FieldCommon { name } }
+              }
+              ... on ProjectV2ItemFieldIterationValue {
+                title
+                startDate
+                duration
+                field { ... on ProjectV2FieldCommon { name } }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+LINKED_QUERY = """
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    projectsV2(first: 20) { nodes { number title closed } }
+  }
+}
+"""
+
+REQUIRED_SECTIONS = (
+    "### User story",
+    "### Acceptatiecriteria",
+    "### Testplan",
+    "### Ontwerp / UML-diagrammen",
+)
+
+def resolve_project_number():
+    # An explicit PROJECT_NUMBER still wins, e.g. for the template repo itself.
+    override = os.environ.get("PROJECT_NUMBER", "").strip()
+    if override:
+        return int(override)
+
+    owner, name = os.environ["GITHUB_REPOSITORY"].split("/")
+    data = json.loads(run(
+        "gh", "api", "graphql",
+        "-f", f"query={LINKED_QUERY}",
+        "-F", f"owner={owner}",
+        "-F", f"name={name}",
+    ))
+    projects = [
+        p for p in data["data"]["repository"]["projectsV2"]["nodes"]
+        if not p["closed"]
+    ]
+    if len(projects) != 1:
+        found = ", ".join(f"#{p['number']} {p['title']}" for p in projects) or "none"
+        sys.exit(
+            f"Expected exactly one open project linked to {owner}/{name}, found: {found}. "
+            "Link one project to this repo, or set the PROJECT_NUMBER variable."
+        )
+    return projects[0]["number"]
+
+
+def run(*args, input_text=None):
+    result = subprocess.run(
+        args,
+        input=input_text,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        print(result.stderr or result.stdout, file=sys.stderr)
+        sys.exit(f"Command failed: {' '.join(args[:3])}")
+    return result.stdout
+
+
+def project_items():
+    project_number = resolve_project_number()
+    result = run(
+        "gh", "api", "graphql",
+        "-f", f"query={QUERY}",
+        "-F", f"owner={OWNER}",
+        "-F", f"number={project_number}",
+    )
+    data = json.loads(result)
+    project = data.get("data", {}).get("organization", {}).get("projectV2")
+    if not project:
+        sys.exit(f"Project {OWNER}/{project_number} could not be read.")
+    return project["items"]["nodes"]
+
+
+def values(item):
+    result = {}
+    for value in item["fieldValues"]["nodes"]:
+        field = value.get("field") or {}
+        name = field.get("name")
+        if not name:
+            continue
+        if "number" in value:
+            result[name] = value["number"]
+        elif "title" in value:
+            result[name] = value
+        elif "name" in value:
+            result[name] = value["name"]
+    return result
+
+
+def try_run(*args):
+    result = subprocess.run(args, check=False, text=True, capture_output=True)
+    if result.returncode != 0:
+        print(f"::warning::{' '.join(args[:4])} failed: {(result.stderr or result.stdout).strip()}")
+    return result.returncode == 0
+
+
+def add_label(repo, issue, label, color, description):
+    try_run(
+        "gh", "label", "create", label, "--repo", repo,
+        "--color", color, "--description", description, "--force",
+    )
+    try_run("gh", "issue", "edit", str(issue), "--repo", repo, "--add-label", label)
+
+
+def remove_label(repo, issue, label):
+    # Fails harmlessly when the label isn't on the issue, so no warning here.
+    subprocess.run(
+        ["gh", "issue", "edit", str(issue), "--repo", repo, "--remove-label", label],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+
+def iteration_has_ended(iteration):
+    if not iteration or not iteration.get("startDate") or not iteration.get("duration"):
+        return False
+    start = dt.date.fromisoformat(iteration["startDate"])
+    end = start + dt.timedelta(days=iteration["duration"])
+    return end < dt.date.today()
+
+
+def main():
+    for item in project_items():
+        content = item.get("content")
+        if item.get("type") != "ISSUE" or not content:
+            continue
+
+        fields = values(item)
+        for value in (content.get("issueFieldValues") or {}).get("nodes") or []:
+            name = (value.get("field") or {}).get("name")
+            if name:
+                fields[name] = value.get("value", value.get("name"))
+        status = fields.get("Status")
+        repo = content["repository"]["nameWithOwner"]
+        issue = content["number"]
+        body = content.get("body") or ""
+
+        backlog_problems = []
+        if status == BACKLOG_STATUS:
+            backlog_problems.extend(
+                f"missing section: {section[4:]}"
+                for section in REQUIRED_SECTIONS
+                if section not in body
+            )
+            if not fields.get("Priority"):
+                backlog_problems.append("missing Priority")
+            if fields.get("Points") is None:
+                backlog_problems.append("missing Points")
+
+        if backlog_problems:
+            add_label(
+                repo, issue, "needs-refinement", "d93f0b",
+                "Story is incomplete for the Scrum backlog.",
+            )
+            print(f"#{issue}: needs refinement ({'; '.join(backlog_problems)})")
+        else:
+            remove_label(repo, issue, "needs-refinement")
+
+        sprint_problems = []
+        if status in SPRINT_STATUSES and content["assignees"]["totalCount"] != 1:
+            sprint_problems.append("story must have exactly one assignee")
+        if status != DONE_STATUS and iteration_has_ended(fields.get("Sprint")):
+            sprint_problems.append("iteration has ended; move, split, or finish the story")
+
+        if sprint_problems:
+            add_label(
+                repo, issue, "needs-sprint-attention", "fbca04",
+                "Story needs a sprint-planning decision.",
+            )
+            print(f"#{issue}: needs sprint attention ({'; '.join(sprint_problems)})")
+        else:
+            remove_label(repo, issue, "needs-sprint-attention")
+
+
+if __name__ == "__main__":
+    main()
