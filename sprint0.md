@@ -11,7 +11,7 @@
 | Developer 1 | Jairo | j.hinse@student.talland.nl | 06 83436912
 | Developer 2 | Kyano | k.vansoelen@student.talland.nl | 06 48188700 
 | Developer 3 | Rick | rickjonk1@icloud.com | 06 11115659
-| Developer 4 | Bram | b.oostendorp@student.talland.nl | 06 xxxxxxx 
+| Developer 4 | Bram | b.oostendorp@student.talland.nl | 06 44332633
 
 
 ## Wat
