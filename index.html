@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0c0e15">
+  <meta name="description" content="Openbare trends op X, YouTube, Google, Instagram, TikTok, de App Store en Hacker News. Met duidelijke bronnen en meetmomenten.">
+  <title>Trendradar — Wat trekt de aandacht?</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <a href="#" class="brand" aria-label="Trendradar startpagina"><span class="brand-mark">◉</span> trendradar<span class="brand-dot">.</span></a>
+    <div class="sidebar-label">ONTDEKKEN</div>
+    <button class="nav-item active" id="navOverview"><span>◫</span> Overzicht</button>
+    <button class="nav-item" id="navSaved"><span>☆</span> Bewaard <span id="savedCount" class="nav-count">0</span></button>
+    <div class="sidebar-label platforms-label">PLATFORMS</div>
+    <div id="sidePlatforms"></div>
+    <div class="sidebar-bottom"><div class="privacy-icon">◇</div><b>Het publieke plaatje.</b><p>Onderwerpen en totaalcijfers.<br>Geen accountprofielen.</p><button class="text-button" data-open-sources>Over de bronnen ↗</button></div>
+  </aside>
+
+  <div class="page">
+    <header class="topbar"><div><span class="breadcrumb">Ontdekken</span><span class="slash">/</span>Overzicht</div><div class="topbar-right"><span class="local-badge"><i></i> Openbare signalen</span><button class="icon-button" data-open-sources aria-label="Uitleg over bronnen">?</button></div></header>
+    <main>
+      <section class="hero">
+        <h1>Trends en activiteit</h1>
+        <p>Openbare cijfers per platform, met bron en meetdatum.</p>
+      </section>
+
+      <section class="summary" aria-label="Overzicht bronnen"><div><span class="summary-label">PLATFORMS</span><strong>9<span>in één overzicht</span></strong></div><div><span class="summary-label">GETOONDE SIGNALEN</span><strong id="signalCount">—<span>met herkomst</span></strong></div><div><span class="summary-label">BRONNEN MET LIJST</span><strong id="readyCount">—<span>live of momentopname</span></strong></div><div class="summary-note"><span class="shield">◇</span><p>Views zijn geen zoekopdrachten.<br><b>Elk cijfer houdt zijn eigen betekenis.</b></p></div></section>
+
+      <section id="trends" class="discovery">
+        <div class="section-title"><h2>Platforms</h2><button id="refresh" class="border-button">↻ Vernieuw bronnen</button></div>
+        <div id="platformCards" class="platform-cards" aria-label="Kies een platform"></div>
+        <div class="toolbar"><div class="tabs" id="metricTabs" aria-label="Soort populariteit"><button class="active" data-metric="all" aria-pressed="true">Alle signalen</button><button data-metric="trending" aria-pressed="false">Trending</button><button data-metric="views" aria-pressed="false">Bekeken</button><button data-metric="downloads" aria-pressed="false">Downloads / rang</button><button data-metric="activity" aria-pressed="false">Activiteit</button></div><div class="filters"><label class="select-wrap"><span class="sr-only">Regio</span><select id="region"><option value="all">Alle regio’s</option><option value="NL">Nederland</option><option value="global">Wereldwijd</option></select></label><label class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg><input id="search" type="search" placeholder="Zoek een onderwerp…" aria-label="Zoek een onderwerp"></label></div></div>
+        <div id="sourceNotice" class="source-notice" role="status"></div>
+        <div class="results-header"><div><h3 id="resultsTitle">Alle platforms</h3><span id="resultsCount"></span></div><div><label class="sr-only" for="limit">Maximum per bron</label><select id="limit"><option value="10">10 per bron</option><option value="25">25 per bron</option><option value="100">Tot 100 per bron</option></select><button id="export" class="icon-button" title="Exporteer de zichtbare signalen als CSV" aria-label="Exporteer CSV">↓</button></div></div>
+        <div id="results" class="results"></div>
+        <div class="results-foot"><span>Volgorde en cijfers gelden binnen de betreffende bron. Geen gezamenlijke populariteitsscore.</span><button class="text-button" data-open-sources>Bekijk bronverantwoording ↗</button></div>
+      </section>
+
+      <section class="explain-strip"><div class="explain-symbol">↗</div><div><h3>Populair is meer dan één getal.</h3><p>Google Play-downloads zijn cumulatieve ondergrenzen. Steam-activiteit telt gelijktijdig online spelers, geen unieke dag- of maandgebruikers. Een trendpositie op X, views op YouTube en een App Store-positie meten iets anders. Je ziet hier de oorspronkelijke maatstaf, de regio en het moment waarop de bron is bekeken.</p></div><button class="border-button" data-open-sources>De cijfers uitgelegd ↗</button></section>
+    </main>
+    <footer><a href="#" class="footer-brand">trendradar.</a><span>Alleen openbare onderwerpen, titels en totaalcijfers.</span><span>HTML · CSS · JavaScript</span></footer>
+  </div>
+
+  <dialog id="sourcesDialog"><div class="dialog-heading"><div><div class="eyebrow small">OPEN KAART</div><h2>Dit vertellen de bronnen.</h2></div><button class="icon-button" id="closeSources" aria-label="Sluiten">×</button></div><p class="dialog-intro">De website haalt beschikbare openbare lijsten rechtstreeks op. Waar dat niet kan, staat er een gedateerde momentopname of een link naar de bron. Ontbrekende cijfers worden niet geschat.</p><div id="sourceDetails"></div><div class="privacy-note"><b>Wat wordt bewaard?</b><p>Alleen je bewaarde onderwerpen en de opgehaalde ranglijsten staan lokaal in deze browser. We tonen en bewaren geen accountnamen, profielen, reacties, e-mailadressen of bezoekersanalytics. De openbare API van Hacker News en de Apple-feed kunnen meer velden terugsturen; de app neemt alleen de gebruikte contentvelden over. Bij bronlinks verlaat je deze website en gelden de regels van die bron.</p><p>Momentopnamen worden niet automatisch ververst. De Google- en YouTube-selecties en de X-selectie zijn geraadpleegd op 6 november 2026. De Google Play-downloadondergrenzen en Steam Charts-momentopname zijn ook op 6 november 2026 geraadpleegd. Google Play wordt niet automatisch uitgelezen; Steam probeert alleen openbare spelerstotalen op te halen. Persoonsnamen en kanaalnamen zijn uit de meegeleverde selectie weggelaten. Live contenttitels kunnen namen bevatten; het zijn openbare artikeltitels, geen gebruikersprofielen.</p><p>Lokale opslag kan worden gewist of geblokkeerd door de browser. Internet en toestemming van de externe bron voor browserverzoeken zijn nodig voor live ophalen. Er is geen proxy en geen achtergrondverzameling.</p></div></dialog>
+  <dialog id="detailDialog"><div id="detailBody"></div><button class="border-button" id="closeDetail">Sluiten</button></dialog>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="app.js" defer></script>
+</body>
+</html>

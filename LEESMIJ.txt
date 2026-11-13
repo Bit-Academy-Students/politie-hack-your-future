@@ -1,0 +1,86 @@
+TRENDRADAR — OPENBARE TRENDS
+
+GEBRUIKEN
+Pak de ZIP uit. Houd index.html, styles.css en app.js samen in deze map.
+Dubbelklik op index.html. Er is geen installatie, server, npm of localhost nodig.
+De losse download trendradar.html bevat dezelfde website in één HTML-bestand.
+
+WAT JE ZIET
+- X/Twitter: vaste selectie van 12 openbare, niet-persoonlijke trendonderwerpen
+  uit Trends24 Nederland. Bronmeting: 6 november 2026, 08:42:18 UTC.
+- Google: vaste selectie van 12 zoekonderwerpen uit Google Trending Now NL.
+  Geraadpleegd: 6 november 2026, 09:19 UTC. Periode: afgelopen 24 uur bij bron.
+  Volumes zoals 20K+ zijn ondergrenzen, geen exacte aantallen.
+- YouTube: vaste selectie van 6 video-onderwerpen uit YouTube Trends24 NL.
+  Geraadpleegd: 6 november 2026, 09:19 UTC. Omschrijvingen zijn verkort en
+  vertaald. Views zijn afgeronde wereldwijde kijktotalen per video, geen
+  Nederlandse dagtotalen. Deze lijst is geen officiële YouTube-ranglijst.
+- Instagram: uitleg en link naar Explore. Er is geen algemene, geverifieerde
+  top van Instagram in dit bestand. Explore kan persoonlijk zijn en login vragen.
+- TikTok: uitleg en link naar het officiële Creative Center. Geen automatisch
+  ingelezen lijst in deze versie.
+- App Store: rechtstreeks ophalen van de NL-top 100 gratis iPhone-apps.
+  Apple geeft een rangpositie, geen exacte downloadaantallen.
+- Hacker News: rechtstreeks ophalen van maximaal 30 topstories en hun punten.
+  Punten zijn geen views. Regio: wereldwijd, overwegend Engelstalig.
+
+Geen van de getoonde momentopnamen is fictieve demodata. Het zijn gedateerde
+selecties. Bronposities kunnen gaten bevatten doordat namen of andere items
+niet zijn overgenomen. Er wordt geen gezamenlijke populariteitsscore gemaakt.
+
+BRONNEN EN BEPERKINGEN
+De knoppen en het bronnenvenster linken naar de gebruikte pagina's en officiële
+documentatie. Momentopnamen worden niet opnieuw opgehaald met Vernieuwen.
+Open daarvoor de huidige bronpagina. Een openbare pagina is niet hetzelfde als
+een vrij uitleesbare API. X vereist bijvoorbeeld officiële toegang en YouTube
+een API-key voor automatisch ophalen via hun API. Die toegang is niet gekoppeld.
+
+App Store en Hacker News hebben internet nodig. Een browser of bron kan een
+rechtstreeks verzoek blokkeren. Dan verschijnen eerder opgeslagen echte
+metingen of een melding met bronlink; er worden geen cijfers verzonnen.
+
+Filters: platform, type signaal, regio, zoekterm en maximum per bron.
+Klik op een titel voor bronverantwoording. Klik op de ster om te bewaren.
+CSV-export neemt alleen zichtbare resultaten, inclusief bron en meetdatum, over.
+Je bewaarde items blijven onder de actieve filters vallen.
+
+PRIVACY
+De website toont onderwerpen, openbare contenttitels en totaalcijfers.
+Accountnamen, profielen, reacties, e-mails en bezoekersanalytics worden niet
+getoond of opgeslagen. Live contenttitels kunnen namen bevatten; het gaat om
+openbare artikeltitels, niet om gebruikersprofielen. De API-respons van een
+bron kan extra velden bevatten; die neemt de app niet over in de dataset.
+Er worden geen accounts gekoppeld, geen tokens opgeslagen en geen likes geplaatst.
+Alleen bewaarde onderwerp-ID's en de beperkte live datasets worden lokaal in
+jouw browser bewaard. Lokaal opgeslagen gegevens kunnen door de browser worden
+gewist of geblokkeerd. Externe bronnen hanteren hun eigen regels als je ze opent.
+De optionele Google Fonts laden online; zonder die verbinding werkt de site
+met systeemlettertypen. Er is geen proxy of achtergrondverzameling.
+
+BESTANDEN AANPASSEN
+index.html  — pagina en teksten
+styles.css  — vormgeving en mobiele lay-out
+app.js      — bronnen, gedateerde selecties, filters en opslag
+
+Je kunt deze drie bestanden ook naar een gewone statische webhost uploaden.
+Er is daar evenmin een backend nodig. De bronbeperkingen blijven hetzelfde.
+
+DOWNLOADS EN ACTIVITEIT — TOEGEVOEGD
+- Google Play: openbare wereldwijde cumulatieve downloadondergrenzen voor
+  WhatsApp (10 miljard+), Instagram (5 miljard+), X (1 miljard+) en TikTok
+  (1 miljard+). Geraadpleegd op 6 november 2026. Niet automatisch bijgewerkt.
+  Deze getallen zijn geen exacte aantallen en geen aantallen actieve gebruikers.
+  Elke rij verwijst naar de betreffende officiële Google Play-pagina.
+- Steam: gelijktijdig online spelers voor Counter-Strike 2, PUBG, Dota 2 en
+  Stardew Valley. De pagina probeert het openbare spelerstotaal rechtstreeks
+  via de Steam Web API te laden. Lukt dat niet, dan blijft de gedateerde officiële
+  Steam Charts-momentopname of eerder opgehaalde echte meting zichtbaar.
+  Steam telt hier geen offline spelers, downloads of unieke maandgebruikers.
+- De volgorde van deze twee kleine lijsten geldt binnen de gekozen selectie;
+  het is geen algemene wereldwijde download- of activiteitstoplijst.
+- Gebruik de filters Downloads / rang en Activiteit. Export neemt de eenheid,
+  bron en meetdatum mee. De App Store-feed blijft een ranglijst zonder aantallen.
+- Er worden geen persoonlijke speler-ID's of gebruikersprofielen opgevraagd.
+- Bronnen: Google Play-appdetailpagina's en
+  https://partner.steamgames.com/doc/webapi/ISteamUserStats#GetNumberOfCurrentPlayers
+  https://store.steampowered.com/charts/mostplayed
