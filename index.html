@@ -38,15 +38,28 @@
         </header>
         <main>
             <section class="hero">
-                <h1>Trends en activiteit</h1>
-                <p>Openbare cijfers per platform, met bron en meetdatum.</p>
+                <div class="hero-copy">
+                    <span class="hero-kicker"><i></i> TRENDRADAR · OPENBARE BRONNEN</span>
+                    <h1>Wat speelt er <span>online?</span></h1>
+                    <p>Ontdek openbare signalen van negen platforms. Met bron, context en meetmoment helder in beeld.</p>
+                    <a class="hero-cta" href="#trends">Verken platforms <span aria-hidden="true">↓</span></a>
+                </div>
+                <aside class="hero-insight" aria-label="Belangrijke context">
+                    <span class="hero-insight-label">EERLIJK VERGELIJKEN</span>
+                    <strong>Geen appels met peren.</strong>
+                    <p>Views, downloads en rangposities hebben elk hun eigen betekenis.</p>
+                    <button class="text-button" data-open-sources>Zo werken de bronnen ↗</button>
+                </aside>
             </section>
 
             <section class="summary" aria-label="Overzicht bronnen">
-                <div><span class="summary-label">PLATFORMS</span><strong>9<span>in één overzicht</span></strong></div>
-                <div><span class="summary-label">BESCHIKBARE SIGNALEN</span><strong id="signalCount">—<span>in alle
+                <div class="summary-card summary-platforms"><span class="stat-icon" aria-hidden="true">◎</span><span
+                        class="summary-label">PLATFORMS</span><strong>9<span>in één overzicht</span></strong></div>
+                <div class="summary-card summary-signals"><span class="stat-icon" aria-hidden="true">▤</span><span
+                        class="summary-label">BESCHIKBARE SIGNALEN</span><strong id="signalCount">—<span>in alle
                             lijsten</span></strong></div>
-                <div><span class="summary-label">BRONNEN MET LIJST</span><strong id="readyCount">—<span>live of
+                <div class="summary-card summary-sources"><span class="stat-icon" aria-hidden="true">↗</span><span
+                        class="summary-label">BRONNEN MET LIJST</span><strong id="readyCount">—<span>live of
                             momentopname</span></strong></div>
                 <div class="summary-note"><span class="shield">◇</span>
                     <p>Views zijn geen zoekopdrachten.<br><b>Elk cijfer houdt zijn eigen betekenis.</b></p>

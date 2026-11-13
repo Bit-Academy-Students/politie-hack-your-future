@@ -167,7 +167,10 @@ function visibleGroups() {
 }
 function renderNavigation() {
   $('sidePlatforms').innerHTML = platforms.map(p => `<button class="platform-nav ${activePlatform === p.id ? 'active' : ''}" data-platform="${p.id}" aria-pressed="${activePlatform === p.id}" style="${theme(p)}"><span class="small-symbol" aria-hidden="true">${p.symbol}</span>${p.name}</button>`).join('');
-  $('platformCards').innerHTML = platforms.map(p => `<button class="platform-card ${activePlatform === p.id ? 'active' : ''}" data-platform="${p.id}" aria-pressed="${activePlatform === p.id}" style="${theme(p)}">${icon(p)}<b>${p.name}</b><small class="${statusClass(p.id)}"><i></i>${statusLabel(p.id)}</small></button>`).join('');
+  $('platformCards').innerHTML = platforms.map(p => {
+    const count = datasets[p.id].length;
+    return `<button class="platform-card ${activePlatform === p.id ? 'active' : ''}" data-platform="${p.id}" aria-pressed="${activePlatform === p.id}" style="${theme(p)}">${icon(p)}<b>${p.name}</b><div class="platform-card-meta"><small class="${statusClass(p.id)}"><i></i>${statusLabel(p.id)}</small><span class="platform-card-count">${count} ${count === 1 ? 'signaal' : 'signalen'}</span></div></button>`;
+  }).join('');
   $('navOverview').classList.toggle('active', !savedOnly);
   $('navSaved').classList.toggle('active', savedOnly);
   $('savedCount').textContent = bookmarks.size;
