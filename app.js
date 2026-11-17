@@ -162,6 +162,7 @@ function visibleGroups() {
 }
 function renderNavigation() {
   $('sidePlatforms').innerHTML = platforms.map(p => `<button class="platform-nav ${activePlatform === p.id ? 'active' : ''}" data-platform="${p.id}" aria-pressed="${activePlatform === p.id}" style="${theme(p)}"><span class="small-symbol" aria-hidden="true">${p.symbol}</span>${p.name}</button>`).join('');
+<<<<<<< HEAD
   const card = p => {
     const count = datasets[p.id].length;
     const countLabel = count ? `${count} ${count === 1 ? 'resultaat' : 'resultaten'}` : '';
@@ -176,6 +177,14 @@ function renderNavigation() {
   $('pageBreadcrumb').textContent = activePage === 'apps' ? 'App-ranglijsten' : savedOnly ? 'Bewaard' : 'Overzicht';
   $('overviewPage').hidden = activePage !== 'overview';
   $('appsPage').hidden = activePage !== 'apps';
+=======
+  $('platformCards').innerHTML = platforms.map(p => {
+    const count = datasets[p.id].length;
+    return `<button class="platform-card ${activePlatform === p.id ? 'active' : ''}" data-platform="${p.id}" aria-pressed="${activePlatform === p.id}" style="${theme(p)}">${icon(p)}<b>${p.name}</b><div class="platform-card-meta"><small class="${statusClass(p.id)}"><i></i>${statusLabel(p.id)}</small><span class="platform-card-count">${count} ${count === 1 ? 'signaal' : 'signalen'}</span></div></button>`;
+  }).join('');
+  $('navOverview').classList.toggle('active', !savedOnly);
+  $('navSaved').classList.toggle('active', savedOnly);
+>>>>>>> fba0139030983f91e471994eb2c7c70ba93b3be9
   $('savedCount').textContent = bookmarks.size;
   document.querySelectorAll('[data-metric]').forEach(button => {
     const active = button.dataset.metric === activeMetric;
