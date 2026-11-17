@@ -264,8 +264,114 @@ function importGoogleTrends(PDO $db): int
     }
 }
 
-// Run both imports when called as: php import.php
-// Requiring this file from another PHP script only defines the two functions.
+// Edit the default list below, or pass your own [Steam app ID => game name] array.
+function importSteamPlayers(PDO $db, array $games = [
+    730 => 'Counter-Strike 2',
+    570 => 'Dota 2',
+    578080 => 'PUBG: BATTLEGROUNDS',
+    252490 => 'Rust',
+]): int {
+    if ($games === []) {
+        throw new InvalidArgumentException('Configure at least one Steam game.');
+    }
+    $endpoint = 'https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/';
+    $context = stream_context_create(['http' => [
+        'timeout' => 15,
+        'header' => "User-Agent: SimpleTrendsImporter/1.0\r\nAccept: application/json\r\n",
+    ]]);
+
+    // Fetch all selected games before starting the database transaction.
+    // A failed game prevents a partial Steam snapshot from replacing the last complete one.
+    $results = [];
+    foreach ($games as $steamId => $name) {
+        $steamId = (string) $steamId;
+        if (!ctype_digit($steamId) || (int) $steamId < 1 || (int) $steamId > 4294967295
+            || !is_string($name) || trim($name) === '') {
+            throw new InvalidArgumentException('Steam games must map positive app IDs to game names.');
+        }
+        $url = $endpoint . '?appid=' . rawurlencode($steamId);
+        $raw = @file_get_contents($url, false, $context);
+        if ($raw === false) {
+            throw new RuntimeException('Could not download Steam player count for app ' . $steamId . '.');
+        }
+        $data = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        $response = $data['response'] ?? [];
+        if (($response['result'] ?? null) !== 1 || !isset($response['player_count'])
+            || !is_int($response['player_count']) || $response['player_count'] < 0) {
+            throw new RuntimeException('Steam returned an invalid player count for app ' . $steamId . '.');
+        }
+        $results[] = [
+            'steam_app_id' => $steamId,
+            'name' => trim($name),
+            'url' => $url,
+            'current_players' => $response['player_count'],
+            'measured_at' => gmdate('Y-m-d H:i:s'),
+            'raw_response' => $raw,
+        ];
+    }
+    $fetchedAt = gmdate('Y-m-d H:i:s');
+    $payload = json_encode(['games' => $results], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+    $db->beginTransaction();
+    try {
+        $source = $db->prepare(
+            "INSERT INTO sources (provider, feed_name, country_code, endpoint_url, format)
+             VALUES ('steam', 'selected_game_players', 'GLOBAL', ?, 'json')
+             ON CONFLICT(provider, feed_name, country_code)
+             DO UPDATE SET endpoint_url = excluded.endpoint_url"
+        );
+        $source->execute([$endpoint]);
+        $sourceId = (int) $db->query(
+            "SELECT source_id FROM sources
+             WHERE provider = 'steam' AND feed_name = 'selected_game_players' AND country_code = 'GLOBAL'"
+        )->fetchColumn();
+        $snapshot = $db->prepare(
+            'INSERT INTO feed_snapshots (source_id, fetched_at, raw_payload) VALUES (?, ?, ?)'
+        );
+        $snapshot->execute([$sourceId, $fetchedAt, $payload]);
+        $snapshotId = (int) $db->lastInsertId();
+
+        $saveApp = $db->prepare(
+            'INSERT INTO apps (app_id, name, title, store_url, last_seen_at) VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(app_id) DO UPDATE SET name = excluded.name, title = excluded.title,
+                 store_url = excluded.store_url, last_seen_at = excluded.last_seen_at'
+        );
+        $saveItem = $db->prepare(
+            "INSERT INTO source_items (source_id, source_key, item_type, display_name, app_id)
+             VALUES (?, ?, 'app', ?, ?)
+             ON CONFLICT(source_id, source_key) DO UPDATE SET display_name = excluded.display_name"
+        );
+        $findItem = $db->prepare('SELECT item_id FROM source_items WHERE source_id = ? AND source_key = ?');
+        $saveObservation = $db->prepare(
+            'INSERT INTO trend_observations (source_id, snapshot_id, item_id, title, list_position)
+             VALUES (?, ?, ?, ?, ?)'
+        );
+        $saveCount = $db->prepare(
+            'INSERT INTO steam_player_counts (observation_id, current_players, measured_at) VALUES (?, ?, ?)'
+        );
+        foreach ($results as $index => $game) {
+            $appId = 'steam:' . $game['steam_app_id'];
+            $storeUrl = 'https://store.steampowered.com/app/' . $game['steam_app_id'] . '/';
+            $saveApp->execute([$appId, $game['name'], $game['name'], $storeUrl, $game['measured_at']]);
+            $saveItem->execute([$sourceId, $game['steam_app_id'], $game['name'], $appId]);
+            $findItem->execute([$sourceId, $game['steam_app_id']]);
+            $itemId = (int) $findItem->fetchColumn();
+            $saveObservation->execute([$sourceId, $snapshotId, $itemId, $game['name'], $index + 1]);
+            $observationId = (int) $db->lastInsertId();
+            $saveCount->execute([$observationId, $game['current_players'], $game['measured_at']]);
+        }
+        $db->commit();
+        return count($results);
+    } catch (Throwable $error) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        throw $error;
+    }
+}
+
+// Run all three imports when called as: php import.php
+// Requiring this file from another PHP script only defines the import functions.
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     // EDIT THIS to point to the SQLite database you already created.
     $databasePath = __DIR__ . '/trends.sqlite';
@@ -279,7 +385,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     $db->exec('PRAGMA busy_timeout = 5000');
 
     $failed = false;
-    foreach (['importAppleApps', 'importGoogleTrends'] as $import) {
+    foreach (['importAppleApps', 'importGoogleTrends', 'importSteamPlayers'] as $import) {
         try {
             echo $import . ': imported ' . $import($db) . " items.\n";
         } catch (Throwable $error) {
