@@ -90,46 +90,7 @@ try {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Trends overview</title>
-    <style>
-        :root { color-scheme: light; font-family: system-ui, sans-serif; color: #172b35; background: #f3f6f7; }
-        * { box-sizing: border-box; }
-        body { margin: 0; }
-        main { max-width: 1200px; margin: auto; padding: 36px 22px 60px; }
-        header, .feed-heading, .trend-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-        header { margin-bottom: 26px; }
-        h1 { font-size: 30px; letter-spacing: -1px; margin: 0 0 5px; }
-        h2 { font-size: 20px; margin: 0 0 6px; }
-        h3 { font-size: 17px; margin: 0; }
-        p { margin: 6px 0; }
-        .muted { color: #5d6d76; font-size: 13px; line-height: 1.6; }
-        .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 26px; }
-        .stat, section, .empty, .error { background: white; border: 1px solid #dce4e7; border-radius: 12px; }
-        .stat { padding: 17px; }
-        .stat strong { display: block; font-size: 27px; margin-bottom: 3px; }
-        section { margin-bottom: 24px; overflow: hidden; }
-        .feed-heading { padding: 22px; align-items: flex-start; }
-        .badge { display: inline-block; white-space: nowrap; padding: 6px 10px; border-radius: 6px; background: #e8f4ef; color: #146247; font-size: 13px; font-weight: 600; }
-        .scroll { overflow: auto; max-height: 570px; border-top: 1px solid #e4eaed; }
-        table { border-collapse: collapse; width: 100%; text-align: left; font-size: 14px; }
-        th, td { padding: 13px 18px; border-bottom: 1px solid #e8edef; vertical-align: top; }
-        th { position: sticky; top: 0; background: #f8fafb; color: #5d6d76; font-weight: 600; font-size: 12px; }
-        tbody tr:last-child td { border-bottom: 0; }
-        a { color: #12674d; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-        a:focus-visible, button:focus-visible { outline: 3px solid #8cc7b6; outline-offset: 3px; }
-        button { border: 1px solid #cbd8dc; border-radius: 7px; padding: 9px 15px; background: white; color: #172b35; font: inherit; cursor: pointer; }
-        .trends { border-top: 1px solid #e4eaed; }
-        article { padding: 20px 22px; border-bottom: 1px solid #e8edef; }
-        article:last-child { border-bottom: 0; }
-        ul { padding-left: 20px; margin: 12px 0 0; }
-        li { padding: 4px 0; line-height: 1.5; font-size: 14px; }
-        .empty, .error { padding: 22px; }
-        section .empty { border: 0; border-top: 1px solid #e4eaed; border-radius: 0; }
-        .error { border-color: #d6a199; background: #fff7f5; }
-        .nowrap { white-space: nowrap; }
-        @media (max-width: 850px) { .stats { grid-template-columns: repeat(3, 1fr); } }
-        @media (max-width: 480px) { main { padding: 24px 14px; } .stats { grid-template-columns: repeat(2, 1fr); } .feed-heading { flex-wrap: wrap; } th, td { padding: 12px; } }
-    </style>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main>
@@ -197,6 +158,7 @@ try {
                                         <td><?= h($row['developer_name'] ?? '—') ?></td>
                                         <td><?= h($row['category_label'] ?? '—') ?></td>
                                         <td class="nowrap"><?= $row['price_amount'] !== null ? h(trim(($row['currency'] ?? '') . ' ' . $row['price_amount'])) : '—' ?></td>
+                                        <td></td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
