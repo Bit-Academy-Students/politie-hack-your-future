@@ -31,17 +31,17 @@ php -m
 
 ## Starten
 
-1. Open een terminal in de map met `schema.sql`, `import.php` en `overview.php`.
+1. Open een terminal in de projectmap met `import.php` en `index.php`.
 2. Maak je SQLite-database aan of open je bestaande database en voer `schema.sql`
-   uit. Dit bestand bevat alle zeven tabellen en bijbehorende indexen.
+   in de submap `sql` uit.
    Met het optionele SQLite-programma kan dat zo:
 
    ```powershell
-   sqlite3 trends.sqlite ".read schema.sql"
+   sqlite3 trends.sqlite ".read sql/schema.sql"
    ```
 
 3. Controleer `$databasePath` in **beide** PHP-bestanden. In `import.php` staat
-   dit onderaan, in `overview.php` bovenaan. Standaard gebruiken ze:
+   dit onderaan, in `index.php` bovenaan. Standaard gebruiken ze:
 
    ```php
    $databasePath = __DIR__ . '/trends.sqlite';
@@ -59,7 +59,7 @@ php -m
    php -S 127.0.0.1:4173
    ```
 
-6. Open [het overzicht](http://127.0.0.1:4173/overview.php) in je browser.
+6. Open [het overzicht](http://127.0.0.1:4173/) in je browser.
 
 PHP haalt de bronnen tijdens het importeren op vanaf de server. Daardoor heeft
 de browser geen externe CORS-toegang nodig. Open de overzichtspagina via de
@@ -68,8 +68,8 @@ PHP-server, zodat de PHP-code wordt uitgevoerd.
 ## Gegevens bijwerken
 
 Voer `php import.php` opnieuw uit wanneer je nieuwe gegevens wilt opslaan. Het
-script probeert beide bronnen en toont per bron hoeveel items zijn geïmporteerd.
-Als één bron mislukt, wordt de andere bron alsnog geprobeerd. Bij een fout eindigt
+script probeert de ingestelde bronnen en toont hoeveel items per bron zijn geïmporteerd.
+Als één bron mislukt, worden de overige bronnen alsnog geprobeerd. Bij een fout eindigt
 het script met exitcode 1.
 
 De knop **Refresh** op de overzichtspagina leest de database opnieuw. Nieuwe
@@ -146,9 +146,37 @@ specificeert geen meetvenster; tel waarden uit opeenvolgende snapshots daarom
 niet bij elkaar op als een totaal zoekvolume. De feedvolgorde wordt opgeslagen
 als lijstpositie en wordt niet als populariteitsrang behandeld.
 
+### Cloudflare Radar (optioneel)
+
+Cloudflare Radar geeft een ranglijst van domeinen die stijgen in Nederland,
+op basis van metingen van de 1.1.1.1 DNS-resolver.
+[Nederlandse ranglijst](https://radar.cloudflare.com/domains/nl).
+
+Maak een Cloudflare API-token met de rechten voor het rankingendpoint en zet
+`CLOUDFLARE_API_TOKEN` in de omgeving van de terminal waarin je importeert.
+In PowerShell kan dat met een invoerprompt waarbij het token verborgen blijft:
+
+```powershell
+$secret = Read-Host 'Cloudflare API-token' -AsSecureString
+$env:CLOUDFLARE_API_TOKEN = [System.Net.NetworkCredential]::new('', $secret).Password
+Remove-Variable secret
+php import.php
+Remove-Item Env:CLOUDFLARE_API_TOKEN
+```
+
+De importer gebruikt `location=NL` en `rankingType=TRENDING_RISE`.
+Het antwoord gaat als JSON naar `feed_snapshots`. Het bestaande databaseschema
+volstaat. Zonder token verwerkt het script de andere bronnen zoals gebruikelijk.
+[Rechten en parameters voor het endpoint](https://developers.cloudflare.com/api/resources/radar/subresources/ranking/methods/top/).
+
 ## Overzichtspagina
 
-`overview.php` toont:
+`index.php` toont:
+
+- App Store-stijgers en apps die in de laatste 30 dagen zijn uitgebracht en in de top 100 staan.
+- Uitklapbare recente posities uit maximaal vijf verschillende chartupdates in zeven dagen.
+- De Nederlandse Cloudflare Radar-ranglijst zodra er een snapshot is opgeslagen.
+- Websitezoekopdrachten uit Google Trends, op basis van domeinen of namen in `$websiteAliases`.
 
 - Totalen voor bronnen, apps, zoektermen, snapshots, waarnemingen en artikelvermeldingen.
 - De volledige appchart uit het laatste Apple-snapshot.
@@ -190,8 +218,8 @@ van toepassing.
 | Bestand | Functie |
 | --- | --- |
 | `schema.sql` | Alle tabellen, relaties en indexen voor SQLite. |
-| `import.php` | De twee importfuncties en het startpunt voor beide imports. |
-| `overview.php` | Overzichtspagina met ingebouwde vormgeving. |
+| `import.php` | Importfuncties en het startpunt voor imports via de terminal. |
+| `index.php` | Overzichtspagina met ingebouwde vormgeving. |
 | `README.md` | Installatie, gebruik en uitleg over de gegevens. |
 
 ## Controle

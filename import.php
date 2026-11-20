@@ -370,9 +370,70 @@ function importSteamPlayers(PDO $db, array $games = [
     }
 }
 
-// Run all three imports when called as: php import.php
+function importCloudflareRadar(PDO $db): int
+{
+    $token = trim((string) getenv('CLOUDFLARE_API_TOKEN'));
+    if ($token === '' || preg_match('/\s/', $token)) {
+        throw new RuntimeException('Set a valid CLOUDFLARE_API_TOKEN before importing Radar.');
+    }
+
+    $url = 'https://api.cloudflare.com/client/v4/radar/ranking/top?location=NL&rankingType=TRENDING_RISE&limit=10';
+    $context = stream_context_create(['http' => [
+        'timeout' => 20,
+        'follow_location' => 0,
+        'header' => "Accept: application/json\r\nAuthorization: Bearer {$token}\r\n",
+    ]]);
+    $raw = @file_get_contents($url, false, $context);
+    if ($raw === false) {
+        throw new RuntimeException('Could not download Cloudflare Radar. Check the token permissions and HTTPS connection.');
+    }
+    $data = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+    $domains = $data['result']['top_0'] ?? null;
+    if (($data['success'] ?? null) !== true || !is_array($domains) || !array_is_list($domains)) {
+        throw new RuntimeException('Cloudflare Radar did not return a domain ranking.');
+    }
+    foreach ($domains as $domain) {
+        if (!is_string($domain['domain'] ?? null) || trim($domain['domain']) === ''
+            || !is_int($domain['rank'] ?? null) || $domain['rank'] < 1) {
+            throw new RuntimeException('Cloudflare Radar returned an invalid domain ranking.');
+        }
+    }
+
+    $fetchedAt = gmdate('Y-m-d H:i:s');
+    $lastUpdated = $data['result']['meta']['lastUpdated'] ?? null;
+    $updatedAt = is_string($lastUpdated) && $lastUpdated !== ''
+        ? (new DateTimeImmutable($lastUpdated))->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s')
+        : null;
+
+    // The small ranked list is self-contained in the snapshot's original response.
+    $db->beginTransaction();
+    try {
+        $source = $db->prepare(
+            "INSERT INTO sources (provider, feed_name, country_code, endpoint_url, format)
+             VALUES ('cloudflare_radar', 'rising_domains', 'NL', ?, 'json')
+             ON CONFLICT(provider, feed_name, country_code)
+             DO UPDATE SET endpoint_url = excluded.endpoint_url"
+        );
+        $source->execute([$url]);
+        $sourceId = $db->query(
+            "SELECT source_id FROM sources
+             WHERE provider = 'cloudflare_radar' AND feed_name = 'rising_domains' AND country_code = 'NL'"
+        )->fetchColumn();
+        $snapshot = $db->prepare(
+            'INSERT INTO feed_snapshots (source_id, fetched_at, feed_updated_at, raw_payload) VALUES (?, ?, ?, ?)'
+        );
+        $snapshot->execute([$sourceId, $fetchedAt, $updatedAt, $raw]);
+        $db->commit();
+        return count($domains);
+    } catch (Throwable $error) {
+        $db->rollBack();
+        throw $error;
+    }
+}
+
+// Run the imports from the command line: php import.php
 // Requiring this file from another PHP script only defines the import functions.
-if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
+if (PHP_SAPI === 'cli' && realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     // EDIT THIS to point to the SQLite database you already created.
     $databasePath = __DIR__ . '/trends.sqlite';
     if (!is_file($databasePath)) {
@@ -385,7 +446,11 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     $db->exec('PRAGMA busy_timeout = 5000');
 
     $failed = false;
-    foreach (['importAppleApps', 'importGoogleTrends', 'importSteamPlayers'] as $import) {
+    $imports = ['importAppleApps', 'importGoogleTrends', 'importSteamPlayers'];
+    if (trim((string) getenv('CLOUDFLARE_API_TOKEN')) !== '') {
+        $imports[] = 'importCloudflareRadar';
+    }
+    foreach ($imports as $import) {
         try {
             echo $import . ': imported ' . $import($db) . " items.\n";
         } catch (Throwable $error) {
