@@ -9,6 +9,11 @@ $databasePath = __DIR__ . '/trends.sqlite';
 // Example: ['example platform' => 'example.com']
 $websiteAliases = [];
 
+$comparisonWindows = ['24h' => 86400, '7d' => 7 * 86400];
+$requestedWindow = $_GET['window'] ?? '24h';
+$comparisonWindow = is_string($requestedWindow) && isset($comparisonWindows[$requestedWindow])
+    ? $requestedWindow : '24h';
+
 function h(mixed $value): string
 {
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -62,7 +67,9 @@ try {
          ORDER BY fetched_at DESC, snapshot_id DESC LIMIT 1'
     );
     $findRows = $db->prepare(
-        'SELECT o.*, a.store_url, a.developer_name, a.category_label, a.price_amount, a.currency, a.released_at
+        'SELECT o.*, a.store_url, a.developer_name, a.category_label, a.price_amount, a.currency, a.released_at,
+                (SELECT image.url FROM app_images image WHERE image.app_id = a.app_id
+                 ORDER BY image.height DESC LIMIT 1) AS app_icon
          FROM trend_observations o
          JOIN source_items i ON i.item_id = o.item_id
          LEFT JOIN apps a ON a.app_id = i.app_id
@@ -73,15 +80,14 @@ try {
          JOIN trend_observations o ON o.observation_id = a.observation_id
          WHERE o.snapshot_id = ? ORDER BY o.list_position, a.position'
     );
-    // Choose the closest saved comparison at or before 24 hours ago. During
-    // initial collection, use the oldest earlier chart if it spans less than a day.
+    // Pick the earlier, distinct chart closest to the requested comparison time.
     $findBaseline = $db->prepare(
         'SELECT s.fetched_at, s.snapshot_id FROM feed_snapshots s
-         WHERE s.source_id = :source AND s.fetched_at < :latest
+         WHERE s.source_id = :source AND s.snapshot_id <> :snapshot AND s.fetched_at <= :latest
+           AND COALESCE(s.feed_updated_at, s.fetched_at) < :latest_chart
            AND EXISTS (SELECT 1 FROM trend_observations o
                        WHERE o.snapshot_id = s.snapshot_id AND o.chart_rank IS NOT NULL)
-         ORDER BY CASE WHEN s.fetched_at <= :cutoff THEN 0 ELSE 1 END,
-                  CASE WHEN s.fetched_at <= :cutoff THEN s.fetched_at END DESC,
+         ORDER BY ABS(strftime(\'%s\', s.fetched_at) - strftime(\'%s\', :target)),
                   s.fetched_at ASC, s.snapshot_id DESC LIMIT 1'
     );
     $findRanks = $db->prepare(
@@ -149,8 +155,10 @@ try {
                 }
                 $findBaseline->execute([
                     'source' => $source['source_id'],
+                    'snapshot' => $snapshot['snapshot_id'],
                     'latest' => $snapshot['fetched_at'],
-                    'cutoff' => gmdate('Y-m-d H:i:s', $latest - 86400),
+                    'latest_chart' => $snapshot['feed_updated_at'] ?? $snapshot['fetched_at'],
+                    'target' => gmdate('Y-m-d H:i:s', $latest - $comparisonWindows[$comparisonWindow]),
                 ]);
                 $appBaseline = $findBaseline->fetch() ?: null;
                 if ($appBaseline !== null) {
@@ -210,18 +218,24 @@ try {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Trends overview</title>
-    <link rel="stylesheet" href="style.css">   
+    <title>TrendRadar · Internet hotspots in the Netherlands</title>
+    <link rel="stylesheet" href="style.css?v=<?= (int) filemtime(__DIR__ . '/style.css') ?>">
 </head>
 
 <body>
     <main>
-        <header>
-            <div>
-                <h1>Internet hotspots in the Netherlands</h1>
-                <p class="muted">Apps climbing the Dutch App Store chart and websites drawing search interest.</p>
+        <header class="masthead">
+            <div class="masthead-top">
+                <div class="brand"><span class="brand-mark" aria-hidden="true"></span>TrendRadar</div>
+                <form method="get">
+                    <input type="hidden" name="window" value="<?= h($comparisonWindow) ?>">
+                    <button type="submit">Refresh overview</button>
+                </form>
             </div>
-            <form method="get"><button type="submit">Refresh</button></form>
+            <div class="masthead-copy">
+                <h1>Internet hotspots in the Netherlands</h1>
+                <p>Track changes in the Dutch App Store and spot websites gaining attention.</p>
+            </div>
         </header>
 
         <?php if ($error !== null): ?>
@@ -232,55 +246,79 @@ try {
             </div>
         <?php else: ?>
             <div class="hotspots">
-                <section aria-labelledby="app-hotspots-title">
-                    <div class="feed-heading">
+                <section class="movers" id="climbs" aria-labelledby="app-hotspots-title">
+                    <div class="feed-heading movers-heading">
                         <div>
-                            <h2 id="app-hotspots-title">Dutch App Store movers</h2>
-                            <?php if ($appBaseline !== null): ?>
-                                <p class="muted"><?= h(dutchTime($appBaseline['fetched_at'])) ?> → <?= h(dutchTime($appSnapshot['fetched_at'])) ?></p>
-                            <?php endif; ?>
+                            <p class="source-label">Dutch App Store · Top 100 free apps</p>
+                            <h2 id="app-hotspots-title">Biggest climbs</h2>
                         </div>
+                        <nav class="window-picker" aria-label="Rank comparison period">
+                            <?php foreach (['24h' => '24 hours', '7d' => '7 days'] as $window => $label): ?>
+                                <a href="?window=<?= h($window) ?>#climbs"<?= $window === $comparisonWindow ? ' aria-current="true"' : '' ?>><?= h($label) ?></a>
+                            <?php endforeach; ?>
+                        </nav>
                     </div>
                     <div class="hotspot-content">
                         <?php if ($appBaseline === null): ?>
-                            <p class="muted">Rank changes appear after two Dutch App Store snapshots have been saved.</p>
-                        <?php elseif ($risingApps === [] && $chartEntries === []): ?>
-                            <p class="muted">No climbs or entries in the latest saved chart compared with the baseline above.</p>
+                            <p class="comparison-note">Rank changes appear once two distinct Dutch charts have been saved.</p>
+                        <?php else: ?>
+                            <p class="comparison-note">
+                                <strong><?= h(dutchTime($appBaseline['fetched_at'])) ?> → <?= h(dutchTime($appSnapshot['fetched_at'])) ?></strong>
+                                <span>Using the saved chart closest to the selected period.</span>
+                            </p>
+                            <?php if ($risingApps === []): ?>
+                                <p class="empty-inline">No apps climbed between these charts.</p>
+                            <?php endif; ?>
                         <?php endif; ?>
                         <?php foreach (
                             [
-                                'Biggest climbs' => $risingApps,
-                                'Entered the chart since comparison' => $chartEntries,
-                                'Released in the last 30 days' => $recentReleases
-                            ] as $label => $items
+                                'climbs' => ['label' => null, 'items' => $risingApps],
+                                'entries' => ['label' => 'Entered the top 100', 'items' => $chartEntries],
+                                'releases' => ['label' => 'Released in the last 30 days', 'items' => $recentReleases],
+                            ] as $kind => ['label' => $label, 'items' => $items]
                         ): ?>
                             <?php if ($items === []) {
                                 continue;
                             } ?>
-                            <h3><?= h($label) ?></h3>
-                            <ul>
-                                <?php foreach (array_slice($items, 0, 5) as $app): $url = webUrl($app['store_url']); ?>
-                                    <li>
-                                        <div>
-                                            <?php if ($url !== null): ?><a href="<?= h($url) ?>"><?= h($app['title']) ?></a><?php else: ?><?= h($app['title']) ?><?php endif; ?>
-                                                <?php if ($app['released_at'] !== null): ?>
-                                                    <div class="muted">Released <?= h(substr($app['released_at'], 0, 10)) ?></div>
-                                                <?php endif; ?>
-                                                <?php if (count($chartHistory) >= 2): ?>
-                                                    <details class="muted rank-history">
-                                                        <summary>Recent ranks</summary>
-                                                        <dl>
-                                                            <?php foreach ($chartHistory as $chart): ?>
-                                                                <dt><?= h(dutchTime($chart['at'])) ?></dt>
-                                                                <dd><?= isset($chart['ranks'][$app['item_id']]) ? '#' . h($chart['ranks'][$app['item_id']]) : 'Outside this top 100' ?></dd>
-                                                            <?php endforeach; ?>
-                                                        </dl>
-                                                    </details>
-                                                <?php endif; ?>
-                                        </div>
-                                        <span class="badge">
-                                            <?php if (isset($app['gain'])): ?>↑ <?= h($app['gain']) ?> · #<?= h($app['previous_rank']) ?> →<?php endif; ?> #<?= h($app['chart_rank']) ?>
+                            <?php if ($label !== null): ?><h3 class="list-heading"><?= h($label) ?></h3><?php endif; ?>
+                            <ul class="mover-list <?= $kind === 'climbs' ? 'gain-list' : 'support-list' ?>" aria-label="<?= h($label ?? 'Apps by places gained') ?>">
+                                <?php foreach (array_slice($items, 0, 5) as $app):
+                                    $url = webUrl($app['store_url']);
+                                    $icon = webUrl($app['app_icon']);
+                                ?>
+                                    <li class="mover-row">
+                                        <span class="app-icon" aria-hidden="true">
+                                            <?= h(mb_strtoupper(mb_substr(trim($app['title']), 0, 1, 'UTF-8'), 'UTF-8')) ?>
+                                            <?php if ($icon !== null): ?><img src="<?= h($icon) ?>" alt="" width="44" height="44" loading="lazy" decoding="async" referrerpolicy="no-referrer"><?php endif; ?>
                                         </span>
+                                        <div class="mover-name">
+                                            <?php if ($url !== null): ?><a href="<?= h($url) ?>"><?= h($app['title']) ?></a><?php else: ?><?= h($app['title']) ?><?php endif; ?>
+                                            <?php if ($kind === 'releases'): ?>
+                                                <div class="muted">Released <?= h(substr($app['released_at'], 0, 10)) ?></div>
+                                            <?php elseif ($app['category_label'] !== null): ?>
+                                                <div class="muted"><?= h($app['category_label']) ?></div>
+                                            <?php endif; ?>
+                                            <?php if (count($chartHistory) >= 2): ?>
+                                                <details class="muted rank-history">
+                                                    <summary>Recent ranks</summary>
+                                                    <dl>
+                                                        <?php foreach ($chartHistory as $chart): ?>
+                                                            <dt><?= h(dutchTime($chart['at'])) ?></dt>
+                                                            <dd><?= isset($chart['ranks'][$app['item_id']]) ? '#' . h($chart['ranks'][$app['item_id']]) : 'Outside this top 100' ?></dd>
+                                                        <?php endforeach; ?>
+                                                    </dl>
+                                                </details>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="rank-result">
+                                            <?php if ($kind === 'climbs'): ?>
+                                                <div class="rank-gain"><strong>+<?= h($app['gain']) ?></strong> <span><?= $app['gain'] === 1 ? 'place' : 'places' ?></span></div>
+                                                <div class="rank-change"><span>#<?= h($app['previous_rank']) ?></span> <span aria-label="to">→</span> <strong>#<?= h($app['chart_rank']) ?></strong></div>
+                                                <div class="gain-track" aria-hidden="true"><span style="width: <?= (int) round(100 * $app['gain'] / $risingApps[0]['gain']) ?>%"></span></div>
+                                            <?php else: ?>
+                                                <span class="badge rank-now">#<?= h($app['chart_rank']) ?></span>
+                                            <?php endif; ?>
+                                        </div>
                                     </li>
                                 <?php endforeach; ?>
                             </ul>
@@ -291,15 +329,16 @@ try {
                     <section aria-labelledby="radar-hotspots-title">
                         <div class="feed-heading">
                             <div>
-                                <h2 id="radar-hotspots-title">Rising domains in the Netherlands</h2>
+                                <p class="source-label">Cloudflare Radar</p>
+                                <h2 id="radar-hotspots-title">Rising domains</h2>
                                 <?php if ($radarSnapshot !== null): ?>
-                                    <p class="muted">Cloudflare Radar · <?= h(dutchTime($radarSnapshot['feed_updated_at'] ?? $radarSnapshot['fetched_at'])) ?></p>
+                                    <p class="muted"><?= h(dutchTime($radarSnapshot['feed_updated_at'] ?? $radarSnapshot['fetched_at'])) ?></p>
                                 <?php endif; ?>
                             </div>
                         </div>
                         <div class="hotspot-content">
                             <?php if ($radarSnapshot === null): ?>
-                                <p class="muted">Set <code>CLOUDFLARE_API_TOKEN</code> and run <code>php import.php</code> to save this ranking.</p>
+                                <p class="empty-inline">No ranking has been imported. Configure Cloudflare Radar to show rising Dutch domains here.</p>
                             <?php elseif ($radarDomains === []): ?>
                                 <p class="muted">Cloudflare returned an empty ranking for this snapshot.</p>
                             <?php else: ?>
@@ -312,15 +351,16 @@ try {
                                     <?php endforeach; ?>
                                 </ol>
                             <?php endif; ?>
-                            <p class="muted">This ranking is based on Cloudflare’s DNS resolver. <a href="https://radar.cloudflare.com/domains/nl">View the source</a></p>
+                            <p class="muted"><a href="https://radar.cloudflare.com/domains/nl">View Dutch domain rankings ↗</a></p>
                         </div>
                     </section>
                     <section aria-labelledby="website-hotspots-title">
                         <div class="feed-heading">
                             <div>
+                                <p class="source-label">Google Trends</p>
                                 <h2 id="website-hotspots-title">Website search leads</h2>
                                 <?php if ($searchSnapshot !== null): ?>
-                                    <p class="muted">Google Trends Netherlands · <?= h(dutchTime($searchSnapshot['fetched_at'])) ?></p>
+                                    <p class="muted"><?= h(dutchTime($searchSnapshot['fetched_at'])) ?></p>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -328,7 +368,7 @@ try {
                             <?php if ($searchSnapshot === null): ?>
                                 <p class="muted">Website search leads appear after the first Dutch Google Trends import.</p>
                             <?php elseif ($websiteLeads === []): ?>
-                                <p class="muted">No domain searches or configured website names appeared in this snapshot.</p>
+                                <p class="empty-inline">No domain searches or tracked websites appeared in this snapshot.</p>
                             <?php else: ?>
                                 <ul>
                                     <?php foreach (array_slice($websiteLeads, 0, 5) as $lead): ?>
@@ -347,6 +387,7 @@ try {
                     </section>
                 </div>
             </div>
+            <h2 class="feeds-title">Source overview</h2>
             <div class="stats">
                 <?php foreach (
                     [
@@ -361,7 +402,7 @@ try {
                     <div class="stat"><strong><?= number_format((int) $totals[$key]) ?></strong><span class="muted"><?= h($label) ?></span></div>
                 <?php endforeach; ?>
             </div>
-            <p class="muted" style="margin-bottom: 18px">Totals include all imports. The full feeds below show their latest saved snapshots in UTC. Run import.php to fetch new data.</p>
+            <p class="muted overview-note">Totals include all imports. The feeds below show the latest saved snapshots in UTC.</p>
 
             <?php if ($feeds === [] && $radarSnapshot === null): ?>
                 <div class="empty">
