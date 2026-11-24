@@ -13,6 +13,68 @@ $comparisonWindows = ['24h' => 86400, '7d' => 7 * 86400];
 $requestedWindow = $_GET['window'] ?? '24h';
 $comparisonWindow = is_string($requestedWindow) && isset($comparisonWindows[$requestedWindow])
     ? $requestedWindow : '24h';
+$socialOnly = ($_GET['view'] ?? null) === 'social';
+
+// Apple plaatst sommige sociale apps onder nieuws, video of andere categorieën.
+const SOCIAL_APP_IDS = [
+    '389801252',  // Instagram
+    '835599320',  // TikTok
+    '447188370',  // Snapchat
+    '333903271',  // X
+    '544007664',  // YouTube
+    '288429040',  // LinkedIn
+    '429047995',  // Pinterest
+    '460177396',  // Twitch
+    '1386412985', // WhatsApp Business
+    '1064216828', // Reddit
+];
+
+const SOCIAL_DOMAINS = [
+    'instagram.com', 'tiktok.com', 'snapchat.com', 'facebook.com', 'fb.com', 'messenger.com',
+    'x.com', 'twitter.com', 'threads.net', 'threads.com', 'reddit.com', 'redd.it', 'youtube.com', 'youtu.be',
+    'linkedin.com', 'pinterest.com', 'pinterest.nl', 'discord.com', 'discord.gg', 'whatsapp.com', 'wa.me',
+    'telegram.org', 't.me', 'bsky.app', 'mastodon.social', 'twitch.tv', 'signal.org',
+];
+
+function isSocialDomain(string $host): bool
+{
+    $host = strtolower(rtrim($host, '.'));
+    foreach (SOCIAL_DOMAINS as $domain) {
+        if ($host === $domain || str_ends_with($host, '.' . $domain)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function socialSearchDomain(string $term): ?string
+{
+    $domainPattern = '/[a-z0-9-]+(?:\.[a-z0-9-]+)+/i';
+    preg_match_all($domainPattern, $term, $hosts);
+    foreach ($hosts[0] as $host) {
+        if (isSocialDomain($host)) {
+            return $host;
+        }
+    }
+
+    // Herken platformnamen als losse woorden, zonder onbekende domeinen mee te tellen.
+    $words = preg_replace($domainPattern, ' ', $term);
+    $platforms = [
+        'instagram threads|threads app' => 'threads.com',
+        'instagram' => 'instagram.com', 'tiktok|tik tok' => 'tiktok.com', 'snapchat' => 'snapchat.com',
+        'facebook' => 'facebook.com', 'twitter' => 'x.com', 'reddit' => 'reddit.com',
+        'youtube|you tube' => 'youtube.com', 'linkedin' => 'linkedin.com', 'pinterest' => 'pinterest.com',
+        'discord' => 'discord.com', 'whatsapp|whats app' => 'whatsapp.com', 'telegram' => 'telegram.org',
+        'bluesky' => 'bsky.app', 'mastodon' => 'mastodon.social', 'twitch' => 'twitch.tv',
+        'signal messenger|signal app' => 'signal.org',
+    ];
+    foreach ($platforms as $names => $domain) {
+        if (preg_match('/(?<![\p{L}\p{N}])(?:' . $names . ')(?![\p{L}\p{N}])/u', $words)) {
+            return $domain;
+        }
+    }
+    return null;
+}
 
 function h(mixed $value): string
 {
@@ -70,7 +132,7 @@ try {
          ORDER BY fetched_at DESC, snapshot_id DESC LIMIT 1'
     );
     $findRows = $db->prepare(
-        'SELECT o.*, a.store_url, a.developer_name, a.category_label, a.price_amount, a.currency, a.released_at,
+        'SELECT o.*, a.app_id, a.category_id, a.store_url, a.developer_name, a.category_label, a.price_amount, a.currency, a.released_at,
                 (SELECT image.url FROM app_images image WHERE image.app_id = a.app_id
                  ORDER BY image.height DESC LIMIT 1) AS app_icon
          FROM trend_observations o
@@ -109,6 +171,9 @@ try {
     $findPayload = $db->prepare('SELECT raw_payload FROM feed_snapshots WHERE snapshot_id = ?');
 
     foreach ($sources as $source) {
+        if ($socialOnly && !in_array($source['provider'], ['apple', 'google_trends', 'cloudflare_radar'], true)) {
+            continue;
+        }
         $findSnapshot->execute([$source['source_id']]);
         $snapshot = $findSnapshot->fetch();
         if (
@@ -120,6 +185,9 @@ try {
                 $findPayload->execute([$snapshot['snapshot_id']]);
                 $payload = json_decode((string) $findPayload->fetchColumn(), true);
                 $radarDomains = $payload['result']['top_0'] ?? [];
+                if ($socialOnly) {
+                    $radarDomains = array_filter($radarDomains, static fn(array $entry): bool => isSocialDomain($entry['domain']));
+                }
             }
             continue;
         }
@@ -128,6 +196,22 @@ try {
         if ($snapshot !== false) {
             $findRows->execute([$snapshot['snapshot_id']]);
             $rows = $findRows->fetchAll();
+            if ($socialOnly && $source['provider'] === 'apple') {
+                $rows = array_filter($rows, static fn(array $app): bool => (int) $app['category_id'] === 6005
+                    || in_array((string) $app['app_id'], SOCIAL_APP_IDS, true));
+            }
+            if ($socialOnly && $source['provider'] === 'google_trends') {
+                $socialRows = [];
+                foreach ($rows as $row) {
+                    $term = mb_strtolower(trim($row['title']), 'UTF-8');
+                    $alias = $websiteAliases[$term] ?? null;
+                    $row['domain'] = $alias !== null && isSocialDomain($alias) ? $alias : socialSearchDomain($term);
+                    if ($row['domain'] !== null) {
+                        $socialRows[] = $row;
+                    }
+                }
+                $rows = $socialRows;
+            }
             $findArticles->execute([$snapshot['snapshot_id']]);
             foreach ($findArticles->fetchAll() as $article) {
                 $articles[$article['observation_id']][] = $article;
@@ -192,7 +276,7 @@ try {
                 $searchSnapshot = $snapshot;
                 foreach ($rows as $row) {
                     $term = mb_strtolower(trim($row['title']), 'UTF-8');
-                    $domain = $websiteAliases[$term] ?? $term;
+                    $domain = $row['domain'] ?? $websiteAliases[$term] ?? $term;
                     // Only explicit domain searches and exact configured aliases qualify.
                     // Article domains identify the publisher, not the subject of a search.
                     if (preg_match('/\A(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\z/', $domain)) {
@@ -235,6 +319,7 @@ try {
                 <div class="brand"><span class="brand-mark" aria-hidden="true"></span>Politie app tracker</div>
                 <form method="get">
                     <input type="hidden" name="window" value="<?= h($comparisonWindow) ?>">
+                    <?php if ($socialOnly): ?><input type="hidden" name="view" value="social"><?php endif; ?>
                     <button type="submit">Overzicht vernieuwen</button>
                 </form>
             </div>
@@ -250,16 +335,20 @@ try {
                 <p><?= h($error) ?></p>
             </div>
         <?php else: ?>
+            <nav class="window-picker view-filter" aria-label="Filter op soort trend">
+                <a href="?window=<?= h($comparisonWindow) ?>&amp;view=all"<?= !$socialOnly ? ' aria-current="true"' : '' ?>>Alles</a>
+                <a href="?window=<?= h($comparisonWindow) ?>&amp;view=social"<?= $socialOnly ? ' aria-current="true"' : '' ?>>Alleen sociale media</a>
+            </nav>
             <div class="hotspots">
                 <section class="movers" id="climbs" aria-labelledby="app-hotspots-title">
                     <div class="feed-heading movers-heading">
                         <div>
-                            <p class="source-label">Nederlandse App Store · Top 100 gratis apps</p>
+                            <p class="source-label">Nederlandse App Store · <?= $socialOnly ? 'Sociale apps in de top 100' : 'Top 100 gratis apps' ?></p>
                             <h2 id="app-hotspots-title">Grootste stijgers</h2>
                         </div>
                         <nav class="window-picker" aria-label="Vergelijkingsperiode">
                             <?php foreach (['24h' => '24 uur', '7d' => '7 dagen'] as $window => $label): ?>
-                                <a href="?window=<?= h($window) ?>#climbs"<?= $window === $comparisonWindow ? ' aria-current="true"' : '' ?>><?= h($label) ?></a>
+                                <a href="?window=<?= h($window) ?><?= $socialOnly ? '&amp;view=social' : '' ?>#climbs"<?= $window === $comparisonWindow ? ' aria-current="true"' : '' ?>><?= h($label) ?></a>
                             <?php endforeach; ?>
                         </nav>
                     </div>
@@ -272,7 +361,7 @@ try {
                                 <span>De vergelijking gebruikt de opgeslagen ranglijst die het dichtst bij de gekozen periode ligt.</span>
                             </p>
                             <?php if ($risingApps === []): ?>
-                                <p class="empty-inline">Tussen deze twee ranglijsten is geen app gestegen.</p>
+                                <p class="empty-inline"><?= $socialOnly ? 'Tussen deze twee ranglijsten is geen sociale app gestegen.' : 'Tussen deze twee ranglijsten is geen app gestegen.' ?></p>
                             <?php endif; ?>
                         <?php endif; ?>
                         <?php foreach (
@@ -335,7 +424,7 @@ try {
                         <div class="feed-heading">
                             <div>
                                 <p class="source-label">Cloudflare Radar</p>
-                                <h2 id="radar-hotspots-title">Stijgende domeinen</h2>
+                                <h2 id="radar-hotspots-title"><?= $socialOnly ? 'Stijgende sociale platforms' : 'Stijgende domeinen' ?></h2>
                                 <?php if ($radarSnapshot !== null): ?>
                                     <p class="muted"><?= h(dutchDate($radarSnapshot['feed_updated_at'] ?? $radarSnapshot['fetched_at'])) ?></p>
                                 <?php endif; ?>
@@ -345,7 +434,7 @@ try {
                             <?php if ($radarSnapshot === null): ?>
                                 <p class="empty-inline">Stel Cloudflare Radar in en importeer de ranglijst om te zien welke domeinen in Nederland aan populariteit winnen.</p>
                             <?php elseif ($radarDomains === []): ?>
-                                <p class="muted">De laatst opgeslagen ranglijst van Cloudflare is leeg.</p>
+                                <p class="muted"><?= $socialOnly ? 'In de laatste meting staan geen herkende sociale platforms.' : 'De laatst opgeslagen ranglijst van Cloudflare is leeg.' ?></p>
                             <?php else: ?>
                                 <ol aria-label="Domeinranglijst van Cloudflare Radar">
                                     <?php foreach ($radarDomains as $domain): ?>
@@ -356,14 +445,16 @@ try {
                                     <?php endforeach; ?>
                                 </ol>
                             <?php endif; ?>
-                            <p class="muted"><a href="https://radar.cloudflare.com/domains/nl">Bekijk de Nederlandse domeinranglijst ↗</a></p>
+                            <?php if (!$socialOnly): ?>
+                                <p class="muted"><a href="https://radar.cloudflare.com/domains/nl">Bekijk de Nederlandse domeinranglijst ↗</a></p>
+                            <?php endif; ?>
                         </div>
                     </section>
                     <section aria-labelledby="website-hotspots-title">
                         <div class="feed-heading">
                             <div>
                                 <p class="source-label">Google Trends</p>
-                                <h2 id="website-hotspots-title">Websites in opkomende zoekopdrachten</h2>
+                                <h2 id="website-hotspots-title"><?= $socialOnly ? 'Zoektrends rond sociale media' : 'Websites in opkomende zoekopdrachten' ?></h2>
                                 <?php if ($searchSnapshot !== null): ?>
                                     <p class="muted"><?= h(dutchDate($searchSnapshot['fetched_at'])) ?></p>
                                 <?php endif; ?>
@@ -373,7 +464,7 @@ try {
                             <?php if ($searchSnapshot === null): ?>
                                 <p class="muted">Na de eerste import van Nederlandse Google Trends-gegevens verschijnen hier zoekopdrachten naar websites.</p>
                             <?php elseif ($websiteLeads === []): ?>
-                                <p class="empty-inline">In de laatst opgehaalde zoektrends kwamen geen domeinnamen of gevolgde websites voor.</p>
+                                <p class="empty-inline"><?= $socialOnly ? 'In de laatste meting kwamen geen zoekopdrachten naar herkende sociale platforms voor.' : 'In de laatst opgehaalde zoektrends kwamen geen domeinnamen of gevolgde websites voor.' ?></p>
                             <?php else: ?>
                                 <ul>
                                     <?php foreach (array_slice($websiteLeads, 0, 5) as $lead): ?>
@@ -393,6 +484,7 @@ try {
                 </div>
             </div>
             <h2 class="feeds-title">Bronoverzicht</h2>
+            <?php if (!$socialOnly): ?>
             <div class="stats">
                 <?php foreach (
                     [
@@ -408,6 +500,7 @@ try {
                 <?php endforeach; ?>
             </div>
             <p class="muted overview-note">De totalen tellen alle imports mee. Hieronder zie je de laatste meting per bron, in Nederlandse tijd.</p>
+            <?php endif; ?>
 
             <?php if ($feeds === [] && $radarSnapshot === null): ?>
                 <div class="empty">
@@ -421,8 +514,8 @@ try {
                 $isApple = $source['provider'] === 'apple';
                 $isGoogle = $source['provider'] === 'google_trends';
                 $heading = match ($source['provider']) {
-                    'apple' => 'App Store · Top 100 gratis apps',
-                    'google_trends' => 'Google Trends · Opkomende zoekopdrachten',
+                    'apple' => $socialOnly ? 'App Store · Sociale apps in de top 100' : 'App Store · Top 100 gratis apps',
+                    'google_trends' => $socialOnly ? 'Google Trends · Sociale media' : 'Google Trends · Opkomende zoekopdrachten',
                     'steam' => 'Steam · Geselecteerde games',
                     default => $source['feed_name'],
                 };
@@ -442,7 +535,11 @@ try {
                     </div>
 
                     <?php if ($rows === []): ?>
-                        <div class="empty">De laatste meting van deze bron bevat geen waarnemingen. Voer <code>php import.php</code> uit om gegevens op te halen.</div>
+                        <?php if ($socialOnly && $snapshot !== false): ?>
+                            <div class="empty">Er zijn in de laatste meting geen resultaten voor dit filter.</div>
+                        <?php else: ?>
+                            <div class="empty">De laatste meting van deze bron bevat geen waarnemingen. Voer <code>php import.php</code> uit om gegevens op te halen.</div>
+                        <?php endif; ?>
                     <?php elseif ($isApple): ?>
                         <div class="scroll" role="region" aria-label="Laatste ranglijst van de App Store" tabindex="0">
                             <div class="scroll" role="region" aria-label="Laatste ranglijst van de App Store" tabindex="0">

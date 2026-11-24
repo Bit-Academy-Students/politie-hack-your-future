@@ -1,4 +1,4 @@
-# TRENDRADAR — OPENBARE DATA EN HISTORIE
+# Politie app tracker
 
 Deze versie haalt Nederlandse App Store- en Google Trends-gegevens op met PHP,
 slaat iedere succesvolle import op in SQLite en toont een overzicht van de
@@ -72,7 +72,7 @@ script probeert de ingestelde bronnen en toont hoeveel items per bron zijn geïm
 Als één bron mislukt, worden de overige bronnen alsnog geprobeerd. Bij een fout eindigt
 het script met exitcode 1.
 
-De knop **Refresh** op de overzichtspagina leest de database opnieuw. Nieuwe
+De knop **Overzicht vernieuwen** leest de database opnieuw. Nieuwe
 brondata wordt opgehaald door het importscript. Voor regelmatige metingen kun je
 `php import.php` zelf periodiek uitvoeren, bijvoorbeeld via Windows Taakplanner.
 
