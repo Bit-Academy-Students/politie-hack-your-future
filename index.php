@@ -70,13 +70,13 @@ try {
          ORDER BY fetched_at DESC, snapshot_id DESC LIMIT 1'
     );
     $findRows = $db->prepare(
-        'SELECT o.*, i.app_id, a.store_url, a.developer_name, a.category_label, a.price_amount, a.currency, a.released_at,
-            (SELECT image.url FROM app_images image WHERE image.app_id = a.app_id
-             ORDER BY image.height DESC LIMIT 1) AS app_icon
-     FROM trend_observations o
-     JOIN source_items i ON i.item_id = o.item_id
-     LEFT JOIN apps a ON a.app_id = i.app_id
-     WHERE o.snapshot_id = ? ORDER BY o.list_position'
+        'SELECT o.*, a.store_url, a.developer_name, a.category_label, a.price_amount, a.currency, a.released_at,
+                (SELECT image.url FROM app_images image WHERE image.app_id = a.app_id
+                 ORDER BY image.height DESC LIMIT 1) AS app_icon
+         FROM trend_observations o
+         JOIN source_items i ON i.item_id = o.item_id
+         LEFT JOIN apps a ON a.app_id = i.app_id
+         WHERE o.snapshot_id = ? ORDER BY o.list_position'
     );
     $findArticles = $db->prepare(
         'SELECT a.* FROM related_articles a
@@ -259,7 +259,7 @@ try {
                         </div>
                         <nav class="window-picker" aria-label="Vergelijkingsperiode">
                             <?php foreach (['24h' => '24 uur', '7d' => '7 dagen'] as $window => $label): ?>
-                                <a href="?window=<?= h($window) ?>#climbs" <?= $window === $comparisonWindow ? ' aria-current="true"' : '' ?>><?= h($label) ?></a>
+                                <a href="?window=<?= h($window) ?>#climbs"<?= $window === $comparisonWindow ? ' aria-current="true"' : '' ?>><?= h($label) ?></a>
                             <?php endforeach; ?>
                         </nav>
                     </div>
@@ -298,22 +298,22 @@ try {
                                         </span>
                                         <div class="mover-name">
                                             <?php if ($url !== null): ?><a href="<?= h($url) ?>"><?= h($app['title']) ?></a><?php else: ?><?= h($app['title']) ?><?php endif; ?>
-                                                <?php if ($kind === 'releases'): ?>
-                                                    <div class="muted">Uitgebracht op <?= h(dutchDate($app['released_at'], false)) ?></div>
-                                                <?php elseif ($app['category_label'] !== null): ?>
-                                                    <div class="muted"><?= h($app['category_label']) ?></div>
-                                                <?php endif; ?>
-                                                <?php if (count($chartHistory) >= 2): ?>
-                                                    <details class="muted rank-history">
-                                                        <summary>Recente posities</summary>
-                                                        <dl>
-                                                            <?php foreach ($chartHistory as $chart): ?>
-                                                                <dt><?= h(dutchDate($chart['at'])) ?></dt>
-                                                                <dd><?= isset($chart['ranks'][$app['item_id']]) ? '#' . h($chart['ranks'][$app['item_id']]) : 'Buiten de top 100' ?></dd>
-                                                            <?php endforeach; ?>
-                                                        </dl>
-                                                    </details>
-                                                <?php endif; ?>
+                                            <?php if ($kind === 'releases'): ?>
+                                                <div class="muted">Uitgebracht op <?= h(dutchDate($app['released_at'], false)) ?></div>
+                                            <?php elseif ($app['category_label'] !== null): ?>
+                                                <div class="muted"><?= h($app['category_label']) ?></div>
+                                            <?php endif; ?>
+                                            <?php if (count($chartHistory) >= 2): ?>
+                                                <details class="muted rank-history">
+                                                    <summary>Recente posities</summary>
+                                                    <dl>
+                                                        <?php foreach ($chartHistory as $chart): ?>
+                                                            <dt><?= h(dutchDate($chart['at'])) ?></dt>
+                                                            <dd><?= isset($chart['ranks'][$app['item_id']]) ? '#' . h($chart['ranks'][$app['item_id']]) : 'Buiten de top 100' ?></dd>
+                                                        <?php endforeach; ?>
+                                                    </dl>
+                                                </details>
+                                            <?php endif; ?>
                                         </div>
                                         <div class="rank-result">
                                             <?php if ($kind === 'climbs'): ?>
@@ -438,11 +438,7 @@ try {
                                 <?php endif; ?>
                             <?php endif; ?>
                         </div>
-                        <span class="badge"><?= h(match ($source['country_code']) {
-                                                'NL' => 'Nederland',
-                                                'GLOBAL' => 'Wereldwijd',
-                                                default => $source['country_code']
-                                            }) ?> &middot; <?= count($rows) ?> <?= count($rows) === 1 ? 'waarneming' : 'waarnemingen' ?></span>
+                        <span class="badge"><?= h(match ($source['country_code']) { 'NL' => 'Nederland', 'GLOBAL' => 'Wereldwijd', default => $source['country_code'] }) ?> &middot; <?= count($rows) ?> <?= count($rows) === 1 ? 'waarneming' : 'waarnemingen' ?></span>
                     </div>
 
                     <?php if ($rows === []): ?>
@@ -457,7 +453,6 @@ try {
                                         <th scope="col">Ontwikkelaar</th>
                                         <th scope="col">Categorie</th>
                                         <th scope="col">Prijs</th>
-                                        <th scope="col">Grafiek</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -468,7 +463,7 @@ try {
                                             <td><?= h($row['developer_name'] ?? '—') ?></td>
                                             <td><?= h($row['category_label'] ?? '—') ?></td>
                                             <td class="nowrap"><?= $row['price_amount'] !== null ? h(trim(($row['currency'] === 'EUR' ? '€' : ($row['currency'] ?? '')) . ' ' . str_replace('.', ',', $row['price_amount']))) : '—' ?></td>
-                                            <td><a href="grafieken.php?id=<?= h($row['app_id']) ?>">Grafiek bekijken</a></td>
+                                            <td></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
