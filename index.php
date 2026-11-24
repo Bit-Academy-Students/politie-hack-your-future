@@ -259,7 +259,7 @@ try {
                         </div>
                         <nav class="window-picker" aria-label="Vergelijkingsperiode">
                             <?php foreach (['24h' => '24 uur', '7d' => '7 dagen'] as $window => $label): ?>
-                                <a href="?window=<?= h($window) ?>#climbs"<?= $window === $comparisonWindow ? ' aria-current="true"' : '' ?>><?= h($label) ?></a>
+                                <a href="?window=<?= h($window) ?>#climbs" <?= $window === $comparisonWindow ? ' aria-current="true"' : '' ?>><?= h($label) ?></a>
                             <?php endforeach; ?>
                         </nav>
                     </div>
@@ -298,22 +298,22 @@ try {
                                         </span>
                                         <div class="mover-name">
                                             <?php if ($url !== null): ?><a href="<?= h($url) ?>"><?= h($app['title']) ?></a><?php else: ?><?= h($app['title']) ?><?php endif; ?>
-                                            <?php if ($kind === 'releases'): ?>
-                                                <div class="muted">Uitgebracht op <?= h(dutchDate($app['released_at'], false)) ?></div>
-                                            <?php elseif ($app['category_label'] !== null): ?>
-                                                <div class="muted"><?= h($app['category_label']) ?></div>
-                                            <?php endif; ?>
-                                            <?php if (count($chartHistory) >= 2): ?>
-                                                <details class="muted rank-history">
-                                                    <summary>Recente posities</summary>
-                                                    <dl>
-                                                        <?php foreach ($chartHistory as $chart): ?>
-                                                            <dt><?= h(dutchDate($chart['at'])) ?></dt>
-                                                            <dd><?= isset($chart['ranks'][$app['item_id']]) ? '#' . h($chart['ranks'][$app['item_id']]) : 'Buiten de top 100' ?></dd>
-                                                        <?php endforeach; ?>
-                                                    </dl>
-                                                </details>
-                                            <?php endif; ?>
+                                                <?php if ($kind === 'releases'): ?>
+                                                    <div class="muted">Uitgebracht op <?= h(dutchDate($app['released_at'], false)) ?></div>
+                                                <?php elseif ($app['category_label'] !== null): ?>
+                                                    <div class="muted"><?= h($app['category_label']) ?></div>
+                                                <?php endif; ?>
+                                                <?php if (count($chartHistory) >= 2): ?>
+                                                    <details class="muted rank-history">
+                                                        <summary>Recente posities</summary>
+                                                        <dl>
+                                                            <?php foreach ($chartHistory as $chart): ?>
+                                                                <dt><?= h(dutchDate($chart['at'])) ?></dt>
+                                                                <dd><?= isset($chart['ranks'][$app['item_id']]) ? '#' . h($chart['ranks'][$app['item_id']]) : 'Buiten de top 100' ?></dd>
+                                                            <?php endforeach; ?>
+                                                        </dl>
+                                                    </details>
+                                                <?php endif; ?>
                                         </div>
                                         <div class="rank-result">
                                             <?php if ($kind === 'climbs'): ?>
@@ -438,66 +438,72 @@ try {
                                 <?php endif; ?>
                             <?php endif; ?>
                         </div>
-                        <span class="badge"><?= h(match ($source['country_code']) { 'NL' => 'Nederland', 'GLOBAL' => 'Wereldwijd', default => $source['country_code'] }) ?> &middot; <?= count($rows) ?> <?= count($rows) === 1 ? 'waarneming' : 'waarnemingen' ?></span>
+                        <span class="badge"><?= h(match ($source['country_code']) {
+                                                'NL' => 'Nederland',
+                                                'GLOBAL' => 'Wereldwijd',
+                                                default => $source['country_code']
+                                            }) ?> &middot; <?= count($rows) ?> <?= count($rows) === 1 ? 'waarneming' : 'waarnemingen' ?></span>
                     </div>
 
                     <?php if ($rows === []): ?>
                         <div class="empty">De laatste meting van deze bron bevat geen waarnemingen. Voer <code>php import.php</code> uit om gegevens op te halen.</div>
                     <?php elseif ($isApple): ?>
                         <div class="scroll" role="region" aria-label="Laatste ranglijst van de App Store" tabindex="0">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th scope="col">Positie</th>
-                                        <th scope="col">App</th>
-                                        <th scope="col">Ontwikkelaar</th>
-                                        <th scope="col">Categorie</th>
-                                        <th scope="col">Prijs</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($rows as $row): $url = webUrl($row['store_url']); ?>
+                            dan moet je ff dit in de code zetten: <div class="scroll" role="region" aria-label="Laatste ranglijst van de App Store" tabindex="0">
+                                <table>
+                                    <thead>
                                         <tr>
-                                            <td><?= h($row['chart_rank'] ?? '—') ?></td>
-                                            <td><?php if ($url !== null): ?><a href="<?= h($url) ?>" target="_blank" rel="noopener noreferrer"><?= h($row['title']) ?></a><?php else: ?><?= h($row['title']) ?><?php endif; ?></td>
-                                            <td><?= h($row['developer_name'] ?? '—') ?></td>
-                                            <td><?= h($row['category_label'] ?? '—') ?></td>
-                                            <td class="nowrap"><?= $row['price_amount'] !== null ? h(trim(($row['currency'] === 'EUR' ? '€' : ($row['currency'] ?? '')) . ' ' . str_replace('.', ',', $row['price_amount']))) : '—' ?></td>
-                                            <td></td>
+                                            <th scope="col">Positie</th>
+                                            <th scope="col">App</th>
+                                            <th scope="col">Ontwikkelaar</th>
+                                            <th scope="col">Categorie</th>
+                                            <th scope="col">Prijs</th>
+                                            <th scope="col">Grafiek</th>
                                         </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                        <p class="muted" style="padding: 10px 22px">De appnamen en posities komen uit deze meting. Ontwikkelaar, categorie en prijs komen uit de laatst opgeslagen appgegevens.</p>
-                    <?php else: ?>
-                        <div class="trends">
-                            <?php foreach ($rows as $row): ?>
-                                <article>
-                                    <div class="trend-heading">
-                                        <h3><?= h($row['title']) ?></h3>
-                                        <?php if ($isGoogle): ?><span class="badge"><?= h($row['traffic_label'] ?? 'Zoekvolume onbekend') ?></span><?php endif; ?>
-                                    </div>
-                                    <p class="muted">Positie in de bronlijst <?= h($row['list_position']) ?><?php if ($row['source_published_at'] !== null): ?> &middot; Gepubliceerd op <?= h(dutchDate($row['source_published_at'])) ?><?php endif; ?></p>
-                                    <?php if (!empty($articles[$row['observation_id']])): ?>
-                                        <ul>
-                                            <?php foreach ($articles[$row['observation_id']] as $article): $url = webUrl($article['url']); ?>
-                                                <li>
-                                                    <?php if ($url !== null): ?><a href="<?= h($url) ?>" target="_blank" rel="noopener noreferrer"><?= h($article['title']) ?></a><?php else: ?><?= h($article['title']) ?><?php endif; ?>
-                                                        <?php if ($article['publisher'] !== null): ?><span class="muted"> &middot; <?= h($article['publisher']) ?></span><?php endif; ?>
-                                                </li>
-                                            <?php endforeach; ?>
-                                        </ul>
-                                    <?php elseif ($isGoogle): ?>
-                                        <p class="muted">Er zijn geen bijbehorende artikelen opgeslagen.</p>
-                                    <?php endif; ?>
-                                </article>
-                            <?php endforeach; ?>
-                        </div>
-                        <?php if ($isGoogle): ?>
-                            <p class="muted" style="padding: 10px 22px">Google geeft het zoekvolume als geschatte ondergrens. De volgorde komt uit de bronlijst.</p>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($rows as $row): $url = webUrl($row['store_url']); ?>
+                                            <tr>
+                                                <td><?= h($row['chart_rank'] ?? '—') ?></td>
+                                                <td><?php if ($url !== null): ?><a href="<?= h($url) ?>" target="_blank" rel="noopener noreferrer"><?= h($row['title']) ?></a><?php else: ?><?= h($row['title']) ?><?php endif; ?></td>
+                                                <td><?= h($row['developer_name'] ?? '—') ?></td>
+                                                <td><?= h($row['category_label'] ?? '—') ?></td>
+                                                <td class="nowrap"><?= $row['price_amount'] !== null ? h(trim(($row['currency'] === 'EUR' ? '€' : ($row['currency'] ?? '')) . ' ' . str_replace('.', ',', $row['price_amount']))) : '—' ?></td>
+                                                <td><a href="grafieken.php">Grafiek bekijken</a></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p class="muted" style="padding: 10px 22px">De appnamen en posities komen uit deze meting. Ontwikkelaar, categorie en prijs komen uit de laatst opgeslagen appgegevens.</p>
+                        <?php else: ?>
+                            <div class="trends">
+                                <?php foreach ($rows as $row): ?>
+                                    <article>
+                                        <div class="trend-heading">
+                                            <h3><?= h($row['title']) ?></h3>
+                                            <?php if ($isGoogle): ?><span class="badge"><?= h($row['traffic_label'] ?? 'Zoekvolume onbekend') ?></span><?php endif; ?>
+                                        </div>
+                                        <p class="muted">Positie in de bronlijst <?= h($row['list_position']) ?><?php if ($row['source_published_at'] !== null): ?> &middot; Gepubliceerd op <?= h(dutchDate($row['source_published_at'])) ?><?php endif; ?></p>
+                                        <?php if (!empty($articles[$row['observation_id']])): ?>
+                                            <ul>
+                                                <?php foreach ($articles[$row['observation_id']] as $article): $url = webUrl($article['url']); ?>
+                                                    <li>
+                                                        <?php if ($url !== null): ?><a href="<?= h($url) ?>" target="_blank" rel="noopener noreferrer"><?= h($article['title']) ?></a><?php else: ?><?= h($article['title']) ?><?php endif; ?>
+                                                            <?php if ($article['publisher'] !== null): ?><span class="muted"> &middot; <?= h($article['publisher']) ?></span><?php endif; ?>
+                                                    </li>
+                                                <?php endforeach; ?>
+                                            </ul>
+                                        <?php elseif ($isGoogle): ?>
+                                            <p class="muted">Er zijn geen bijbehorende artikelen opgeslagen.</p>
+                                        <?php endif; ?>
+                                    </article>
+                                <?php endforeach; ?>
+                            </div>
+                            <?php if ($isGoogle): ?>
+                                <p class="muted" style="padding: 10px 22px">Google geeft het zoekvolume als geschatte ondergrens. De volgorde komt uit de bronlijst.</p>
+                            <?php endif; ?>
                         <?php endif; ?>
-                    <?php endif; ?>
                 </section>
             <?php endforeach; ?>
         <?php endif; ?>
