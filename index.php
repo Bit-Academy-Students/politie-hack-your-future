@@ -469,7 +469,11 @@ try {
                                                 <td><?= h($row['developer_name'] ?? '—') ?></td>
                                                 <td><?= h($row['category_label'] ?? '—') ?></td>
                                                 <td class="nowrap"><?= $row['price_amount'] !== null ? h(trim(($row['currency'] === 'EUR' ? '€' : ($row['currency'] ?? '')) . ' ' . str_replace('.', ',', $row['price_amount']))) : '—' ?></td>
-                                                <td><a href="grafieken.php">Grafiek bekijken</a></td>
+                                                <td>
+                                                    <a href="grafieken.php?id=<?= (int) $row['app_id'] ?>">
+                                                        Grafiek bekijken
+                                                    </a>
+                                                </td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
