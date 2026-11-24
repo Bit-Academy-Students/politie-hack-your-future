@@ -449,7 +449,7 @@ try {
                         <div class="empty">De laatste meting van deze bron bevat geen waarnemingen. Voer <code>php import.php</code> uit om gegevens op te halen.</div>
                     <?php elseif ($isApple): ?>
                         <div class="scroll" role="region" aria-label="Laatste ranglijst van de App Store" tabindex="0">
-                            dan moet je ff dit in de code zetten: <div class="scroll" role="region" aria-label="Laatste ranglijst van de App Store" tabindex="0">
+                            <div class="scroll" role="region" aria-label="Laatste ranglijst van de App Store" tabindex="0">
                                 <table>
                                     <thead>
                                         <tr>
