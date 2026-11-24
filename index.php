@@ -9,6 +9,11 @@ $databasePath = __DIR__ . '/trends.sqlite';
 // Example: ['example platform' => 'example.com']
 $websiteAliases = [];
 
+$comparisonWindows = ['24h' => 86400, '7d' => 7 * 86400];
+$requestedWindow = $_GET['window'] ?? '24h';
+$comparisonWindow = is_string($requestedWindow) && isset($comparisonWindows[$requestedWindow])
+    ? $requestedWindow : '24h';
+
 function h(mixed $value): string
 {
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -23,10 +28,13 @@ function webUrl(?string $url): ?string
         ? $url : null;
 }
 
-function dutchTime(string $utc): string
+function dutchDate(string $utc, bool $withTime = true): string
 {
-    return (new DateTimeImmutable($utc, new DateTimeZone('UTC')))
-        ->setTimezone(new DateTimeZone('Europe/Amsterdam'))->format('j M H:i T');
+    $months = [1 => 'jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+    $date = (new DateTimeImmutable($utc, new DateTimeZone('UTC')))
+        ->setTimezone(new DateTimeZone('Europe/Amsterdam'));
+    $label = $date->format('j') . ' ' . $months[(int) $date->format('n')] . ' ' . $date->format('Y');
+    return $withTime ? $label . ', ' . $date->format('H:i') : $label;
 }
 
 $error = null;
@@ -37,7 +45,7 @@ $risingApps = $chartEntries = $recentReleases = $websiteLeads = $radarDomains = 
 $chartHistory = [];
 try {
     if (!is_file($databasePath)) {
-        throw new RuntimeException('Database not found. Set $databasePath at the top of this file.');
+        throw new RuntimeException('Het SQLite-bestand is niet gevonden.');
     }
     $db = new PDO('sqlite:' . $databasePath, null, null, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -62,26 +70,27 @@ try {
          ORDER BY fetched_at DESC, snapshot_id DESC LIMIT 1'
     );
     $findRows = $db->prepare(
-        'SELECT o.*, a.store_url, a.developer_name, a.category_label, a.price_amount, a.currency, a.released_at
-         FROM trend_observations o
-         JOIN source_items i ON i.item_id = o.item_id
-         LEFT JOIN apps a ON a.app_id = i.app_id
-         WHERE o.snapshot_id = ? ORDER BY o.list_position'
+        'SELECT o.*, i.app_id, a.store_url, a.developer_name, a.category_label, a.price_amount, a.currency, a.released_at,
+            (SELECT image.url FROM app_images image WHERE image.app_id = a.app_id
+             ORDER BY image.height DESC LIMIT 1) AS app_icon
+     FROM trend_observations o
+     JOIN source_items i ON i.item_id = o.item_id
+     LEFT JOIN apps a ON a.app_id = i.app_id
+     WHERE o.snapshot_id = ? ORDER BY o.list_position'
     );
     $findArticles = $db->prepare(
         'SELECT a.* FROM related_articles a
          JOIN trend_observations o ON o.observation_id = a.observation_id
          WHERE o.snapshot_id = ? ORDER BY o.list_position, a.position'
     );
-    // Choose the closest saved comparison at or before 24 hours ago. During
-    // initial collection, use the oldest earlier chart if it spans less than a day.
+    // Pick the earlier, distinct chart closest to the requested comparison time.
     $findBaseline = $db->prepare(
         'SELECT s.fetched_at, s.snapshot_id FROM feed_snapshots s
-         WHERE s.source_id = :source AND s.fetched_at < :latest
+         WHERE s.source_id = :source AND s.snapshot_id <> :snapshot AND s.fetched_at <= :latest
+           AND COALESCE(s.feed_updated_at, s.fetched_at) < :latest_chart
            AND EXISTS (SELECT 1 FROM trend_observations o
                        WHERE o.snapshot_id = s.snapshot_id AND o.chart_rank IS NOT NULL)
-         ORDER BY CASE WHEN s.fetched_at <= :cutoff THEN 0 ELSE 1 END,
-                  CASE WHEN s.fetched_at <= :cutoff THEN s.fetched_at END DESC,
+         ORDER BY ABS(strftime(\'%s\', s.fetched_at) - strftime(\'%s\', :target)),
                   s.fetched_at ASC, s.snapshot_id DESC LIMIT 1'
     );
     $findRanks = $db->prepare(
@@ -149,8 +158,10 @@ try {
                 }
                 $findBaseline->execute([
                     'source' => $source['source_id'],
+                    'snapshot' => $snapshot['snapshot_id'],
                     'latest' => $snapshot['fetched_at'],
-                    'cutoff' => gmdate('Y-m-d H:i:s', $latest - 86400),
+                    'latest_chart' => $snapshot['feed_updated_at'] ?? $snapshot['fetched_at'],
+                    'target' => gmdate('Y-m-d H:i:s', $latest - $comparisonWindows[$comparisonWindow]),
                 ]);
                 $appBaseline = $findBaseline->fetch() ?: null;
                 if ($appBaseline !== null) {
@@ -201,86 +212,118 @@ try {
         $db->rollBack();
     }
     http_response_code(500);
-    $error = $exception->getMessage();
+    error_log($exception->getMessage());
+    $error = is_file($databasePath)
+        ? 'Controleer of PHP de database kan lezen en of het schema uit sql/schema.sql is uitgevoerd.'
+        : 'Het SQLite-bestand is niet gevonden. Controleer het databasepad in index.php.';
 }
 ?>
 <!doctype html>
-<html lang="en">
+<html lang="nl">
 
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Trends overview</title>
-    <link rel="stylesheet" href="style.css">   
+    <title>Politie app tracker · Internettrends in Nederland</title>
+    <link rel="stylesheet" href="style.css?v=<?= (int) filemtime(__DIR__ . '/style.css') ?>">
 </head>
 
 <body>
     <main>
-        <header>
-            <div>
-                <h1>Internet hotspots in the Netherlands</h1>
-                <p class="muted">Apps climbing the Dutch App Store chart and websites drawing search interest.</p>
+        <header class="masthead">
+            <div class="masthead-top">
+                <div class="brand"><span class="brand-mark" aria-hidden="true"></span>Politie app tracker</div>
+                <form method="get">
+                    <input type="hidden" name="window" value="<?= h($comparisonWindow) ?>">
+                    <button type="submit">Overzicht vernieuwen</button>
+                </form>
             </div>
-            <form method="get"><button type="submit">Refresh</button></form>
+            <div class="masthead-copy">
+                <h1>Internettrends in Nederland</h1>
+                <p>Volg welke apps stijgen in de Nederlandse App Store en welke websites meer aandacht krijgen.</p>
+            </div>
         </header>
 
         <?php if ($error !== null): ?>
             <div class="error" role="alert">
-                <h2>Could not load the overview</h2>
+                <h2>Het overzicht kon niet worden geladen</h2>
                 <p><?= h($error) ?></p>
-                <p class="muted">Check the database path and run schema.sql against that database first.</p>
             </div>
         <?php else: ?>
             <div class="hotspots">
-                <section aria-labelledby="app-hotspots-title">
-                    <div class="feed-heading">
+                <section class="movers" id="climbs" aria-labelledby="app-hotspots-title">
+                    <div class="feed-heading movers-heading">
                         <div>
-                            <h2 id="app-hotspots-title">Dutch App Store movers</h2>
-                            <?php if ($appBaseline !== null): ?>
-                                <p class="muted"><?= h(dutchTime($appBaseline['fetched_at'])) ?> → <?= h(dutchTime($appSnapshot['fetched_at'])) ?></p>
-                            <?php endif; ?>
+                            <p class="source-label">Nederlandse App Store · Top 100 gratis apps</p>
+                            <h2 id="app-hotspots-title">Grootste stijgers</h2>
                         </div>
+                        <nav class="window-picker" aria-label="Vergelijkingsperiode">
+                            <?php foreach (['24h' => '24 uur', '7d' => '7 dagen'] as $window => $label): ?>
+                                <a href="?window=<?= h($window) ?>#climbs" <?= $window === $comparisonWindow ? ' aria-current="true"' : '' ?>><?= h($label) ?></a>
+                            <?php endforeach; ?>
+                        </nav>
                     </div>
                     <div class="hotspot-content">
                         <?php if ($appBaseline === null): ?>
-                            <p class="muted">Rank changes appear after two Dutch App Store snapshots have been saved.</p>
-                        <?php elseif ($risingApps === [] && $chartEntries === []): ?>
-                            <p class="muted">No climbs or entries in the latest saved chart compared with the baseline above.</p>
+                            <p class="comparison-note">Zodra er twee verschillende Nederlandse ranglijsten zijn opgeslagen, zie je hier welke apps zijn gestegen.</p>
+                        <?php else: ?>
+                            <p class="comparison-note">
+                                <strong><?= h(dutchDate($appBaseline['fetched_at'])) ?> → <?= h(dutchDate($appSnapshot['fetched_at'])) ?></strong>
+                                <span>De vergelijking gebruikt de opgeslagen ranglijst die het dichtst bij de gekozen periode ligt.</span>
+                            </p>
+                            <?php if ($risingApps === []): ?>
+                                <p class="empty-inline">Tussen deze twee ranglijsten is geen app gestegen.</p>
+                            <?php endif; ?>
                         <?php endif; ?>
                         <?php foreach (
                             [
-                                'Biggest climbs' => $risingApps,
-                                'Entered the chart since comparison' => $chartEntries,
-                                'Released in the last 30 days' => $recentReleases
-                            ] as $label => $items
+                                'climbs' => ['label' => null, 'items' => $risingApps],
+                                'entries' => ['label' => 'Nieuw in de top 100', 'items' => $chartEntries],
+                                'releases' => ['label' => 'Uitgebracht in de afgelopen 30 dagen', 'items' => $recentReleases],
+                            ] as $kind => ['label' => $label, 'items' => $items]
                         ): ?>
                             <?php if ($items === []) {
                                 continue;
                             } ?>
-                            <h3><?= h($label) ?></h3>
-                            <ul>
-                                <?php foreach (array_slice($items, 0, 5) as $app): $url = webUrl($app['store_url']); ?>
-                                    <li>
-                                        <div>
+                            <?php if ($label !== null): ?><h3 class="list-heading"><?= h($label) ?></h3><?php endif; ?>
+                            <ul class="mover-list <?= $kind === 'climbs' ? 'gain-list' : 'support-list' ?>" aria-label="<?= h($label ?? 'Apps op volgorde van aantal gewonnen plaatsen') ?>">
+                                <?php foreach (array_slice($items, 0, 5) as $app):
+                                    $url = webUrl($app['store_url']);
+                                    $icon = webUrl($app['app_icon']);
+                                ?>
+                                    <li class="mover-row">
+                                        <span class="app-icon" aria-hidden="true">
+                                            <?= h(mb_strtoupper(mb_substr(trim($app['title']), 0, 1, 'UTF-8'), 'UTF-8')) ?>
+                                            <?php if ($icon !== null): ?><img src="<?= h($icon) ?>" alt="" width="44" height="44" loading="lazy" decoding="async" referrerpolicy="no-referrer"><?php endif; ?>
+                                        </span>
+                                        <div class="mover-name">
                                             <?php if ($url !== null): ?><a href="<?= h($url) ?>"><?= h($app['title']) ?></a><?php else: ?><?= h($app['title']) ?><?php endif; ?>
-                                                <?php if ($app['released_at'] !== null): ?>
-                                                    <div class="muted">Released <?= h(substr($app['released_at'], 0, 10)) ?></div>
+                                                <?php if ($kind === 'releases'): ?>
+                                                    <div class="muted">Uitgebracht op <?= h(dutchDate($app['released_at'], false)) ?></div>
+                                                <?php elseif ($app['category_label'] !== null): ?>
+                                                    <div class="muted"><?= h($app['category_label']) ?></div>
                                                 <?php endif; ?>
                                                 <?php if (count($chartHistory) >= 2): ?>
                                                     <details class="muted rank-history">
-                                                        <summary>Recent ranks</summary>
+                                                        <summary>Recente posities</summary>
                                                         <dl>
                                                             <?php foreach ($chartHistory as $chart): ?>
-                                                                <dt><?= h(dutchTime($chart['at'])) ?></dt>
-                                                                <dd><?= isset($chart['ranks'][$app['item_id']]) ? '#' . h($chart['ranks'][$app['item_id']]) : 'Outside this top 100' ?></dd>
+                                                                <dt><?= h(dutchDate($chart['at'])) ?></dt>
+                                                                <dd><?= isset($chart['ranks'][$app['item_id']]) ? '#' . h($chart['ranks'][$app['item_id']]) : 'Buiten de top 100' ?></dd>
                                                             <?php endforeach; ?>
                                                         </dl>
                                                     </details>
                                                 <?php endif; ?>
                                         </div>
-                                        <span class="badge">
-                                            <?php if (isset($app['gain'])): ?>↑ <?= h($app['gain']) ?> · #<?= h($app['previous_rank']) ?> →<?php endif; ?> #<?= h($app['chart_rank']) ?>
-                                        </span>
+                                        <div class="rank-result">
+                                            <?php if ($kind === 'climbs'): ?>
+                                                <div class="rank-gain"><strong>+<?= h($app['gain']) ?></strong> <span><?= $app['gain'] === 1 ? 'plaats' : 'plaatsen' ?></span></div>
+                                                <div class="rank-change"><span>#<?= h($app['previous_rank']) ?></span> <span aria-label="naar">→</span> <strong>#<?= h($app['chart_rank']) ?></strong></div>
+                                                <div class="gain-track" aria-hidden="true"><span style="width: <?= (int) round(100 * $app['gain'] / $risingApps[0]['gain']) ?>%"></span></div>
+                                            <?php else: ?>
+                                                <span class="badge rank-now">#<?= h($app['chart_rank']) ?></span>
+                                            <?php endif; ?>
+                                        </div>
                                     </li>
                                 <?php endforeach; ?>
                             </ul>
@@ -291,19 +334,20 @@ try {
                     <section aria-labelledby="radar-hotspots-title">
                         <div class="feed-heading">
                             <div>
-                                <h2 id="radar-hotspots-title">Rising domains in the Netherlands</h2>
+                                <p class="source-label">Cloudflare Radar</p>
+                                <h2 id="radar-hotspots-title">Stijgende domeinen</h2>
                                 <?php if ($radarSnapshot !== null): ?>
-                                    <p class="muted">Cloudflare Radar · <?= h(dutchTime($radarSnapshot['feed_updated_at'] ?? $radarSnapshot['fetched_at'])) ?></p>
+                                    <p class="muted"><?= h(dutchDate($radarSnapshot['feed_updated_at'] ?? $radarSnapshot['fetched_at'])) ?></p>
                                 <?php endif; ?>
                             </div>
                         </div>
                         <div class="hotspot-content">
                             <?php if ($radarSnapshot === null): ?>
-                                <p class="muted">Set <code>CLOUDFLARE_API_TOKEN</code> and run <code>php import.php</code> to save this ranking.</p>
+                                <p class="empty-inline">Stel Cloudflare Radar in en importeer de ranglijst om te zien welke domeinen in Nederland aan populariteit winnen.</p>
                             <?php elseif ($radarDomains === []): ?>
-                                <p class="muted">Cloudflare returned an empty ranking for this snapshot.</p>
+                                <p class="muted">De laatst opgeslagen ranglijst van Cloudflare is leeg.</p>
                             <?php else: ?>
-                                <ol aria-label="Cloudflare Radar domain ranking">
+                                <ol aria-label="Domeinranglijst van Cloudflare Radar">
                                     <?php foreach ($radarDomains as $domain): ?>
                                         <li>
                                             <strong><?= h($domain['domain']) ?></strong>
@@ -312,70 +356,74 @@ try {
                                     <?php endforeach; ?>
                                 </ol>
                             <?php endif; ?>
-                            <p class="muted">This ranking is based on Cloudflare’s DNS resolver. <a href="https://radar.cloudflare.com/domains/nl">View the source</a></p>
+                            <p class="muted"><a href="https://radar.cloudflare.com/domains/nl">Bekijk de Nederlandse domeinranglijst ↗</a></p>
                         </div>
                     </section>
                     <section aria-labelledby="website-hotspots-title">
                         <div class="feed-heading">
                             <div>
-                                <h2 id="website-hotspots-title">Website search leads</h2>
+                                <p class="source-label">Google Trends</p>
+                                <h2 id="website-hotspots-title">Websites in opkomende zoekopdrachten</h2>
                                 <?php if ($searchSnapshot !== null): ?>
-                                    <p class="muted">Google Trends Netherlands · <?= h(dutchTime($searchSnapshot['fetched_at'])) ?></p>
+                                    <p class="muted"><?= h(dutchDate($searchSnapshot['fetched_at'])) ?></p>
                                 <?php endif; ?>
                             </div>
                         </div>
                         <div class="hotspot-content">
                             <?php if ($searchSnapshot === null): ?>
-                                <p class="muted">Website search leads appear after the first Dutch Google Trends import.</p>
+                                <p class="muted">Na de eerste import van Nederlandse Google Trends-gegevens verschijnen hier zoekopdrachten naar websites.</p>
                             <?php elseif ($websiteLeads === []): ?>
-                                <p class="muted">No domain searches or configured website names appeared in this snapshot.</p>
+                                <p class="empty-inline">In de laatst opgehaalde zoektrends kwamen geen domeinnamen of gevolgde websites voor.</p>
                             <?php else: ?>
                                 <ul>
                                     <?php foreach (array_slice($websiteLeads, 0, 5) as $lead): ?>
                                         <li>
                                             <div>
                                                 <strong><?= h($lead['domain']) ?></strong>
-                                                <div class="muted">Google query: <?= h($lead['title']) ?></div>
+                                                <div class="muted">Gezocht op Google: <?= h($lead['title']) ?></div>
                                             </div>
-                                            <span class="badge"><?= h($lead['traffic_label'] ?? 'Volume unavailable') ?></span>
+                                            <span class="badge"><?= h($lead['traffic_label'] ?? 'Zoekvolume onbekend') ?></span>
                                         </li>
                                     <?php endforeach; ?>
                                 </ul>
                             <?php endif; ?>
-                            <p class="muted">Search queries show interest in a site. The volume labels are Google’s estimates.</p>
+                            <p class="muted">De zoekopdrachten wijzen op interesse in een website. De zoekvolumes zijn schattingen van Google.</p>
                         </div>
                     </section>
                 </div>
             </div>
+            <h2 class="feeds-title">Bronoverzicht</h2>
             <div class="stats">
                 <?php foreach (
                     [
-                        'sources' => 'Sources',
-                        'apps' => 'Apps stored',
-                        'queries' => 'Queries tracked',
-                        'snapshots' => 'Snapshots saved',
-                        'observations' => 'Observations',
-                        'articles' => 'Article appearances'
+                        'sources' => 'Bronnen',
+                        'apps' => 'Apps en games',
+                        'queries' => 'Zoekopdrachten',
+                        'snapshots' => 'Opgeslagen metingen',
+                        'observations' => 'Waarnemingen',
+                        'articles' => 'Artikelvermeldingen'
                     ] as $key => $label
                 ): ?>
-                    <div class="stat"><strong><?= number_format((int) $totals[$key]) ?></strong><span class="muted"><?= h($label) ?></span></div>
+                    <div class="stat"><strong><?= number_format((int) $totals[$key], 0, ',', '.') ?></strong><span class="muted"><?= h($label) ?></span></div>
                 <?php endforeach; ?>
             </div>
-            <p class="muted" style="margin-bottom: 18px">Totals include all imports. The full feeds below show their latest saved snapshots in UTC. Run import.php to fetch new data.</p>
+            <p class="muted overview-note">De totalen tellen alle imports mee. Hieronder zie je de laatste meting per bron, in Nederlandse tijd.</p>
 
             <?php if ($feeds === [] && $radarSnapshot === null): ?>
                 <div class="empty">
-                    <h2>No data yet</h2>
-                    <p>Run import.php, then refresh this page.</p>
+                    <h2>Nog geen gegevens</h2>
+                    <p>Voer <code>php import.php</code> uit en vernieuw daarna deze pagina.</p>
                 </div>
             <?php endif; ?>
 
             <?php foreach ($feeds as $feed):
                 ['source' => $source, 'snapshot' => $snapshot, 'rows' => $rows, 'articles' => $articles] = $feed;
                 $isApple = $source['provider'] === 'apple';
+                $isGoogle = $source['provider'] === 'google_trends';
                 $heading = match ($source['provider']) {
-                    'apple' => 'App Store · Top free apps',
-                    'google_trends' => 'Google · Trending searches',
+                    'apple' => 'App Store · Top 100 gratis apps',
+                    'google_trends' => 'Google Trends · Opkomende zoekopdrachten',
+                    'steam' => 'Steam · Geselecteerde games',
                     default => $source['feed_name'],
                 };
             ?>
@@ -384,27 +432,31 @@ try {
                         <div>
                             <h2><?= h($heading) ?></h2>
                             <?php if ($snapshot !== false): ?>
-                                <p class="muted">Fetched <?= h($snapshot['fetched_at']) ?> UTC &middot; Snapshot #<?= h($snapshot['snapshot_id']) ?></p>
+                                <p class="muted">Opgehaald op <?= h(dutchDate($snapshot['fetched_at'])) ?> &middot; Meting #<?= h($snapshot['snapshot_id']) ?></p>
                                 <?php if ($snapshot['feed_updated_at'] !== null): ?>
-                                    <p class="muted">Source updated <?= h($snapshot['feed_updated_at']) ?> UTC</p>
+                                    <p class="muted">Bron bijgewerkt op <?= h(dutchDate($snapshot['feed_updated_at'])) ?></p>
                                 <?php endif; ?>
                             <?php endif; ?>
                         </div>
-                        <span class="badge"><?= h($source['country_code']) ?> &middot; <?= count($rows) ?> items</span>
+                        <span class="badge"><?= h(match ($source['country_code']) {
+                                                'NL' => 'Nederland',
+                                                'GLOBAL' => 'Wereldwijd',
+                                                default => $source['country_code']
+                                            }) ?> &middot; <?= count($rows) ?> <?= count($rows) === 1 ? 'waarneming' : 'waarnemingen' ?></span>
                     </div>
 
                     <?php if ($rows === []): ?>
-                        <div class="empty">No observations in this source's latest snapshot. Run import.php to fetch data.</div>
+                        <div class="empty">De laatste meting van deze bron bevat geen waarnemingen. Voer <code>php import.php</code> uit om gegevens op te halen.</div>
                     <?php elseif ($isApple): ?>
-                        <div class="scroll" role="region" aria-label="Latest App Store chart" tabindex="0">
+                        <div class="scroll" role="region" aria-label="Laatste ranglijst van de App Store" tabindex="0">
                             <table>
                                 <thead>
                                     <tr>
-                                        <th scope="col">Rank</th>
+                                        <th scope="col">Positie</th>
                                         <th scope="col">App</th>
-                                        <th scope="col">Developer</th>
-                                        <th scope="col">Category</th>
-                                        <th scope="col">Price</th>
+                                        <th scope="col">Ontwikkelaar</th>
+                                        <th scope="col">Categorie</th>
+                                        <th scope="col">Prijs</th>
                                         <th scope="col">Grafiek</th>
                                     </tr>
                                 </thead>
@@ -415,23 +467,23 @@ try {
                                             <td><?php if ($url !== null): ?><a href="<?= h($url) ?>" target="_blank" rel="noopener noreferrer"><?= h($row['title']) ?></a><?php else: ?><?= h($row['title']) ?><?php endif; ?></td>
                                             <td><?= h($row['developer_name'] ?? '—') ?></td>
                                             <td><?= h($row['category_label'] ?? '—') ?></td>
-                                            <td class="nowrap"><?= $row['price_amount'] !== null ? h(trim(($row['currency'] ?? '') . ' ' . $row['price_amount'])) : '—' ?></td>
-                                            <td><a href="grafieken.php">Grafiek bekijken</a></td>
+                                            <td class="nowrap"><?= $row['price_amount'] !== null ? h(trim(($row['currency'] === 'EUR' ? '€' : ($row['currency'] ?? '')) . ' ' . str_replace('.', ',', $row['price_amount']))) : '—' ?></td>
+                                            <td><a href="grafieken.php?id=<?= h($row['app_id']) ?>">Grafiek bekijken</a></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
                             </table>
                         </div>
-                        <p class="muted" style="padding: 10px 22px">App titles and ranks are from this snapshot; developer, category and price show the latest stored app details.</p>
+                        <p class="muted" style="padding: 10px 22px">De appnamen en posities komen uit deze meting. Ontwikkelaar, categorie en prijs komen uit de laatst opgeslagen appgegevens.</p>
                     <?php else: ?>
                         <div class="trends">
                             <?php foreach ($rows as $row): ?>
                                 <article>
                                     <div class="trend-heading">
                                         <h3><?= h($row['title']) ?></h3>
-                                        <span class="badge"><?= h($row['traffic_label'] ?? 'Not provided') ?></span>
+                                        <?php if ($isGoogle): ?><span class="badge"><?= h($row['traffic_label'] ?? 'Zoekvolume onbekend') ?></span><?php endif; ?>
                                     </div>
-                                    <p class="muted">Feed position <?= h($row['list_position']) ?><?php if ($row['source_published_at'] !== null): ?> &middot; Published <?= h($row['source_published_at']) ?> UTC<?php endif; ?></p>
+                                    <p class="muted">Positie in de bronlijst <?= h($row['list_position']) ?><?php if ($row['source_published_at'] !== null): ?> &middot; Gepubliceerd op <?= h(dutchDate($row['source_published_at'])) ?><?php endif; ?></p>
                                     <?php if (!empty($articles[$row['observation_id']])): ?>
                                         <ul>
                                             <?php foreach ($articles[$row['observation_id']] as $article): $url = webUrl($article['url']); ?>
@@ -441,13 +493,15 @@ try {
                                                 </li>
                                             <?php endforeach; ?>
                                         </ul>
-                                    <?php else: ?>
-                                        <p class="muted">No related articles saved.</p>
+                                    <?php elseif ($isGoogle): ?>
+                                        <p class="muted">Er zijn geen bijbehorende artikelen opgeslagen.</p>
                                     <?php endif; ?>
                                 </article>
                             <?php endforeach; ?>
                         </div>
-                        <p class="muted" style="padding: 10px 22px">Traffic labels are approximate thresholds as reported by Google. Feed order is not treated as a popularity rank.</p>
+                        <?php if ($isGoogle): ?>
+                            <p class="muted" style="padding: 10px 22px">Google geeft het zoekvolume als geschatte ondergrens. De volgorde komt uit de bronlijst.</p>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </section>
             <?php endforeach; ?>
