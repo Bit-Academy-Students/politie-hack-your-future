@@ -43,6 +43,7 @@
                     <a href="<?= h(dashboardUrl($comparisonWindow, true, $olderOnly)) ?>"<?= $socialOnly ? ' aria-current="true"' : '' ?>>Alleen sociale media</a>
                 </nav>
             </div>
+            <p class="muted chat-legend">Het chat-icoon opent de bevestigende bron. Een vraagteken betekent dat de appbeschrijving op chat wijst. Zonder icoon is de chatfunctie onbekend.</p>
             <?php if ($olderOnly): ?>
                 <p class="muted older-note">Uitgebracht of online vóór <?= h(dutchDate($ageCutoff, false)) ?>. Elke bron heeft een eigen ranglijst.</p>
             <?php endif; ?>

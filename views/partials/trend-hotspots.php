@@ -21,6 +21,7 @@
                                                 <div class="origin-name">
                                                     <strong><?= h($domain['domain']) ?></strong>
                                                     <?php originIcon($domain['domain'], originFor(domain: $domain['domain'])); ?>
+                                                    <?php renderChatBadge(domain: $domain['domain']); ?>
                                                 </div>
                                                 <?php if ($olderOnly): ?><p class="muted"><a href="<?= h($domain['source']) ?>">Online in <?= h(substr($domain['since'], 0, 4)) ?></a></p><?php endif; ?>
                                             </div>
@@ -59,6 +60,7 @@
                                                     <div class="origin-name">
                                                         <strong><?= h($lead['domain']) ?></strong>
                                                         <?php originIcon($lead['domain'], originFor(domain: $lead['domain'])); ?>
+                                                        <?php renderChatBadge(domain: $lead['domain']); ?>
                                                     </div>
                                                     <p class="muted"><?= h($lead['title']) ?> · <a href="<?= h($lead['source']) ?>">Online in <?= h(substr($lead['since'], 0, 4)) ?></a></p>
                                                 </div>
@@ -79,6 +81,7 @@
                                                 <div class="origin-name">
                                                     <strong><?= h($lead['domain']) ?></strong>
                                                     <?php originIcon($lead['domain'], originFor(domain: $lead['domain'])); ?>
+                                                    <?php renderChatBadge(domain: $lead['domain']); ?>
                                                 </div>
                                                 <div class="muted">Gezocht op Google: <?= h($lead['title']) ?></div>
                                             </div>
