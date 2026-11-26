@@ -337,11 +337,33 @@ section {
     min-width: 0;
 }
 
-.mover-name .origin-name > a {
+.mover-name .origin-name > a:not(.chat-capability) {
     display: inline-block;
     color: var(--ink);
     line-height: 1.3;
     font-size: .94rem;
+}
+
+.chat-legend {
+    margin-bottom: 14px;
+}
+
+.chat-capability {
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    min-width: 20px;
+    min-height: 20px;
+    color: var(--blue);
+}
+
+.chat-capability.chat-possible {
+    gap: 1px;
+    color: var(--muted);
+    font-size: .75rem;
+    font-weight: 750;
 }
 
 .origin-name {
