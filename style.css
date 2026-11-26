@@ -220,6 +220,22 @@ section {
     padding: 8px 12px;
 }
 
+.dashboard-filters {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px 16px;
+    margin-bottom: 16px;
+}
+
+.dashboard-filters .view-filter {
+    margin-bottom: 0;
+}
+
+.older-note {
+    margin-bottom: 16px;
+}
+
 .comparison-note {
     color: var(--muted);
     font-size: .8rem;

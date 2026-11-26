@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/herkomst.php';
+require_once __DIR__ . '/leeftijden.php';
 
 $databasePath = __DIR__ . '/trends.sqlite';
 
@@ -13,6 +14,18 @@ $requestedWindow = $_GET['window'] ?? '24h';
 $comparisonWindow = is_string($requestedWindow) && isset($comparisonWindows[$requestedWindow])
     ? $requestedWindow : '24h';
 $socialOnly = ($_GET['view'] ?? null) === 'social';
+$olderOnly = ($_GET['tab'] ?? null) === 'older';
+$ageCutoff = (new DateTimeImmutable('today', new DateTimeZone('Europe/Amsterdam')))
+    ->sub(new DateInterval('P7Y'))->format('Y-m-d');
+
+function dashboardUrl(string $window, bool $socialOnly, bool $olderOnly): string
+{
+    return '?' . http_build_query(array_filter([
+        'window' => $window,
+        'view' => $socialOnly ? 'social' : null,
+        'tab' => $olderOnly ? 'older' : null,
+    ]));
+}
 
 // Apple plaatst sommige sociale apps onder nieuws, video of andere categorieën.
 const SOCIAL_APP_IDS = [
@@ -103,6 +116,8 @@ $totals = [];
 $feeds = [];
 $appSnapshot = $appBaseline = $searchSnapshot = $radarSnapshot = null;
 $risingApps = $legacyRisingApps = $chartEntries = $recentReleases = $websiteLeads = $radarDomains = [];
+$olderSearchGains = $olderSteamGains = [];
+$searchBaseline = $steamBaseline = $steamSnapshot = null;
 $chartHistory = [];
 try {
     if (!is_file($databasePath)) {
@@ -168,6 +183,19 @@ try {
          ) ORDER BY s.fetched_at DESC, s.snapshot_id DESC LIMIT 5'
     );
     $findPayload = $db->prepare('SELECT raw_payload FROM feed_snapshots WHERE snapshot_id = ?');
+    if ($olderOnly) {
+        $findEarlierSnapshot = $db->prepare(
+            "SELECT snapshot_id, fetched_at FROM feed_snapshots WHERE source_id = ? AND fetched_at < ?
+             ORDER BY ABS(strftime('%s', fetched_at) - strftime('%s', ?)), fetched_at ASC, snapshot_id DESC LIMIT 1"
+        );
+        $findPlayerCounts = null;
+        if (!$socialOnly && $db->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'steam_player_counts'")->fetchColumn()) {
+            $findPlayerCounts = $db->prepare(
+                'SELECT o.item_id, p.current_players FROM steam_player_counts p
+                 JOIN trend_observations o USING (observation_id) WHERE o.snapshot_id = ?'
+            );
+        }
+    }
 
     foreach ($sources as $source) {
         if ($socialOnly && !in_array($source['provider'], ['apple', 'google_trends', 'cloudflare_radar'], true)) {
@@ -186,6 +214,16 @@ try {
                 $radarDomains = $payload['result']['top_0'] ?? [];
                 if ($socialOnly) {
                     $radarDomains = array_filter($radarDomains, static fn(array $entry): bool => isSocialDomain($entry['domain']));
+                }
+                if ($olderOnly) {
+                    $knownDomains = [];
+                    foreach ($radarDomains as $entry) {
+                        $age = olderWebsite($entry['domain'], $ageCutoff);
+                        if ($age !== null) {
+                            $knownDomains[] = $entry + $age;
+                        }
+                    }
+                    $radarDomains = $knownDomains;
                 }
             }
             continue;
@@ -291,6 +329,54 @@ try {
                 usort($websiteLeads, static fn(array $a, array $b): int => (($b['traffic_lower_bound'] ?? -1) <=> ($a['traffic_lower_bound'] ?? -1))
                     ?: ($a['list_position'] <=> $b['list_position']));
             }
+
+            if ($olderOnly && in_array($source['provider'], ['google_trends', 'steam'], true)) {
+                $target = gmdate('Y-m-d H:i:s', strtotime($snapshot['fetched_at'] . ' UTC') - $comparisonWindows[$comparisonWindow]);
+                $findEarlierSnapshot->execute([$source['source_id'], $snapshot['fetched_at'], $target]);
+                $baseline = $findEarlierSnapshot->fetch() ?: null;
+                if ($source['provider'] === 'google_trends' && $source['country_code'] === 'NL'
+                    && $source['feed_name'] === 'trending_searches' && $baseline !== null) {
+                    $searchBaseline = $baseline;
+                    $findRows->execute([$baseline['snapshot_id']]);
+                    $previousSearches = array_column($findRows->fetchAll(), null, 'item_id');
+                    foreach ($rows as $row) {
+                        $term = mb_strtolower(trim($row['title']), 'UTF-8');
+                        $domain = $row['domain'] ?? $websiteAliases[$term] ?? socialSearchDomain($term) ?? $term;
+                        $age = olderWebsite($domain, $ageCutoff);
+                        $previous = $previousSearches[$row['item_id']] ?? null;
+                        if ($age === null || $row['source_published_at'] === null
+                            || $row['source_published_at'] !== ($previous['source_published_at'] ?? null)
+                            || $row['traffic_lower_bound'] === null || ($previous['traffic_lower_bound'] ?? null) === null
+                            || $row['traffic_lower_bound'] <= $previous['traffic_lower_bound']) {
+                            continue;
+                        }
+                        $olderSearchGains[] = $row + $age + [
+                            'previous_label' => $previous['traffic_label'],
+                            'gain' => $row['traffic_lower_bound'] - $previous['traffic_lower_bound'],
+                        ];
+                    }
+                    usort($olderSearchGains, static fn(array $a, array $b): int => $b['gain'] <=> $a['gain']);
+                } elseif ($source['provider'] === 'steam' && $source['feed_name'] === 'selected_game_players') {
+                    $steamSnapshot = $snapshot;
+                    $steamBaseline = $baseline;
+                    if ($baseline !== null && $findPlayerCounts !== null) {
+                        $findPlayerCounts->execute([$baseline['snapshot_id']]);
+                        $previousCounts = $findPlayerCounts->fetchAll(PDO::FETCH_KEY_PAIR);
+                        $findPlayerCounts->execute([$snapshot['snapshot_id']]);
+                        $currentCounts = $findPlayerCounts->fetchAll(PDO::FETCH_KEY_PAIR);
+                        foreach ($rows as $game) {
+                            $release = STEAM_RELEASES[$game['app_id']] ?? null;
+                            $before = $previousCounts[$game['item_id']] ?? null;
+                            $after = $currentCounts[$game['item_id']] ?? null;
+                            if ($release !== null && $release[0] < $ageCutoff && $before !== null && $after !== null && $after > $before) {
+                                $olderSteamGains[] = $game + ['since' => $release[0], 'source' => $release[1],
+                                    'before' => $before, 'after' => $after, 'gain' => $after - $before];
+                            }
+                        }
+                        usort($olderSteamGains, static fn(array $a, array $b): int => $b['gain'] <=> $a['gain']);
+                    }
+                }
+            }
         }
         $feeds[] = compact('source', 'snapshot', 'rows', 'articles');
     }
@@ -305,6 +391,9 @@ try {
         ? 'Controleer of PHP de database kan lezen en of het schema uit sql/schema.sql is uitgevoerd.'
         : 'Het SQLite-bestand is niet gevonden. Controleer het databasepad in index.php.';
 }
+
+$shownClimbers = $olderOnly ? array_values(array_filter($risingApps, static fn(array $app): bool =>
+    $app['released_at'] !== null && substr($app['released_at'], 0, 10) < $ageCutoff)) : $risingApps;
 ?>
 <!doctype html>
 <html lang="nl">
@@ -312,7 +401,7 @@ try {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Politie app tracker · Internettrends in Nederland</title>
+    <title>OSINT · Internettrends in Nederland</title>
     <link rel="stylesheet" href="style.css?v=<?= (int) filemtime(__DIR__ . '/style.css') ?>">
     <script defer src="herkomst.js?v=<?= (int) filemtime(__DIR__ . '/herkomst.js') ?>"></script>
 </head>
@@ -321,10 +410,11 @@ try {
     <main>
         <header class="masthead">
             <div class="masthead-top">
-                <div class="brand"><span class="brand-mark" aria-hidden="true"></span>Politie app tracker</div>
+                <div class="brand"><span class="brand-mark" aria-hidden="true"></span>OSINT</div>
                 <form method="get">
                     <input type="hidden" name="window" value="<?= h($comparisonWindow) ?>">
                     <?php if ($socialOnly): ?><input type="hidden" name="view" value="social"><?php endif; ?>
+                    <?php if ($olderOnly): ?><input type="hidden" name="tab" value="older"><?php endif; ?>
                     <button type="submit">Overzicht vernieuwen</button>
                 </form>
             </div>
@@ -340,20 +430,29 @@ try {
                 <p><?= h($error) ?></p>
             </div>
         <?php else: ?>
-            <nav class="window-picker view-filter" aria-label="Filter op soort trend">
-                <a href="?window=<?= h($comparisonWindow) ?>&amp;view=all"<?= !$socialOnly ? ' aria-current="true"' : '' ?>>Alles</a>
-                <a href="?window=<?= h($comparisonWindow) ?>&amp;view=social"<?= $socialOnly ? ' aria-current="true"' : '' ?>>Alleen sociale media</a>
-            </nav>
+            <div class="dashboard-filters">
+                <nav class="window-picker view-filter" aria-label="Dashboardpagina">
+                    <a href="<?= h(dashboardUrl($comparisonWindow, $socialOnly, false)) ?>"<?= !$olderOnly ? ' aria-current="page"' : '' ?>>Overzicht</a>
+                    <a href="<?= h(dashboardUrl($comparisonWindow, $socialOnly, true)) ?>"<?= $olderOnly ? ' aria-current="page"' : '' ?>>Grootste stijgers · 7+ jaar</a>
+                </nav>
+                <nav class="window-picker view-filter" aria-label="Filter op soort trend">
+                    <a href="<?= h(dashboardUrl($comparisonWindow, false, $olderOnly)) ?>"<?= !$socialOnly ? ' aria-current="true"' : '' ?>>Alles</a>
+                    <a href="<?= h(dashboardUrl($comparisonWindow, true, $olderOnly)) ?>"<?= $socialOnly ? ' aria-current="true"' : '' ?>>Alleen sociale media</a>
+                </nav>
+            </div>
+            <?php if ($olderOnly): ?>
+                <p class="muted older-note">Uitgebracht of online vóór <?= h(dutchDate($ageCutoff, false)) ?>. Elke bron heeft een eigen ranglijst.</p>
+            <?php endif; ?>
             <div class="hotspots">
                 <section class="movers" id="climbs" aria-labelledby="app-hotspots-title">
                     <div class="feed-heading movers-heading">
                         <div>
                             <p class="source-label">Nederlandse App Store · <?= $socialOnly ? 'Sociale apps in de top 100' : 'Top 100 gratis apps' ?></p>
-                            <h2 id="app-hotspots-title">Grootste stijgers</h2>
+                            <h2 id="app-hotspots-title"><?= $olderOnly ? 'Stijgende apps' : 'Grootste stijgers' ?></h2>
                         </div>
                         <nav class="window-picker" aria-label="Vergelijkingsperiode">
                             <?php foreach (['24h' => '24 uur', '7d' => '7 dagen'] as $window => $label): ?>
-                                <a href="?window=<?= h($window) ?><?= $socialOnly ? '&amp;view=social' : '' ?>#climbs"<?= $window === $comparisonWindow ? ' aria-current="true"' : '' ?>><?= h($label) ?></a>
+                                <a href="<?= h(dashboardUrl($window, $socialOnly, $olderOnly)) ?>#climbs"<?= $window === $comparisonWindow ? ' aria-current="true"' : '' ?>><?= h($label) ?></a>
                             <?php endforeach; ?>
                         </nav>
                     </div>
@@ -365,17 +464,17 @@ try {
                                 <strong><?= h(dutchDate($appBaseline['fetched_at'])) ?> → <?= h(dutchDate($appSnapshot['fetched_at'])) ?></strong>
                                 <span>De vergelijking gebruikt de opgeslagen ranglijst die het dichtst bij de gekozen periode ligt.</span>
                             </p>
-                            <?php if ($risingApps === []): ?>
-                                <p class="empty-inline"><?= $socialOnly ? 'Tussen deze twee ranglijsten is geen sociale app gestegen.' : 'Tussen deze twee ranglijsten is geen app gestegen.' ?></p>
+                            <?php if ($shownClimbers === []): ?>
+                                <p class="empty-inline"><?= $olderOnly ? 'In deze periode stegen geen apps die aan het leeftijdsfilter voldoen.' : ($socialOnly ? 'Tussen deze twee ranglijsten is geen sociale app gestegen.' : 'Tussen deze twee ranglijsten is geen app gestegen.') ?></p>
                             <?php endif; ?>
                         <?php endif; ?>
                         <?php foreach (
-                            [
-                                'climbs' => ['label' => null, 'items' => $risingApps],
+                            ($olderOnly ? ['climbs' => ['label' => null, 'items' => $shownClimbers]] : [
+                                'climbs' => ['label' => null, 'items' => $shownClimbers],
                                 'entries' => ['label' => 'Nieuw in de top 100', 'items' => $chartEntries],
                                 'legacy' => ['label' => 'Stijgende apps uit 2009 of ouder', 'items' => $legacyRisingApps],
                                 'releases' => ['label' => 'Uitgebracht in de afgelopen 30 dagen', 'items' => $recentReleases],
-                            ] as $kind => ['label' => $label, 'items' => $items]
+                            ]) as $kind => ['label' => $label, 'items' => $items]
                         ): ?>
                             <?php if ($items === []) {
                                 continue;
@@ -396,7 +495,7 @@ try {
                                                 <?php if ($url !== null): ?><a href="<?= h($url) ?>"><?= h($app['title']) ?></a><?php else: ?><span><?= h($app['title']) ?></span><?php endif; ?>
                                                 <?php originIcon($app['title'], originFor($app['app_id'], $app['developer_url'])); ?>
                                             </div>
-                                            <?php if (in_array($kind, ['releases', 'legacy'], true)): ?>
+                                            <?php if ($olderOnly || in_array($kind, ['releases', 'legacy'], true)): ?>
                                                 <div class="muted">Uitgebracht op <?= h(dutchDate($app['released_at'], false)) ?></div>
                                             <?php elseif ($app['category_label'] !== null): ?>
                                                 <div class="muted"><?= h($app['category_label']) ?></div>
@@ -417,7 +516,7 @@ try {
                                             <?php if ($kind === 'climbs'): ?>
                                                 <div class="rank-gain"><strong>+<?= h($app['gain']) ?></strong> <span><?= $app['gain'] === 1 ? 'plaats' : 'plaatsen' ?></span></div>
                                                 <div class="rank-change"><span>#<?= h($app['previous_rank']) ?></span> <span aria-label="naar">→</span> <strong>#<?= h($app['chart_rank']) ?></strong></div>
-                                                <div class="gain-track" aria-hidden="true"><span style="width: <?= (int) round(100 * $app['gain'] / $risingApps[0]['gain']) ?>%"></span></div>
+                                                <div class="gain-track" aria-hidden="true"><span style="width: <?= (int) round(100 * $app['gain'] / $shownClimbers[0]['gain']) ?>%"></span></div>
                                             <?php elseif ($kind === 'legacy'): ?>
                                                 <div class="rank-gain"><strong>+<?= h($app['gain']) ?></strong> <span><?= $app['gain'] === 1 ? 'plaats' : 'plaatsen' ?></span></div>
                                                 <div class="rank-change"><span>#<?= h($app['previous_rank']) ?></span> <span aria-label="naar">→</span> <strong>#<?= h($app['chart_rank']) ?></strong></div>
@@ -446,19 +545,23 @@ try {
                             <?php if ($radarSnapshot === null): ?>
                                 <p class="empty-inline">Stel Cloudflare Radar in en importeer de ranglijst om te zien welke domeinen in Nederland aan populariteit winnen.</p>
                             <?php elseif ($radarDomains === []): ?>
-                                <p class="muted"><?= $socialOnly ? 'In de laatste meting staan geen herkende sociale platforms.' : 'De laatst opgeslagen ranglijst van Cloudflare is leeg.' ?></p>
+                                <p class="muted"><?= $olderOnly ? 'In de laatste ranglijst staan geen passende domeinen met een bevestigde leeftijd.' : ($socialOnly ? 'In de laatste meting staan geen herkende sociale platforms.' : 'De laatst opgeslagen ranglijst van Cloudflare is leeg.') ?></p>
                             <?php else: ?>
                                 <ol aria-label="Domeinranglijst van Cloudflare Radar">
                                     <?php foreach ($radarDomains as $domain): ?>
                                         <li>
-                                            <div class="origin-name">
-                                                <strong><?= h($domain['domain']) ?></strong>
-                                                <?php originIcon($domain['domain'], originFor(domain: $domain['domain'])); ?>
+                                            <div>
+                                                <div class="origin-name">
+                                                    <strong><?= h($domain['domain']) ?></strong>
+                                                    <?php originIcon($domain['domain'], originFor(domain: $domain['domain'])); ?>
+                                                </div>
+                                                <?php if ($olderOnly): ?><p class="muted"><a href="<?= h($domain['source']) ?>">Online in <?= h(substr($domain['since'], 0, 4)) ?></a></p><?php endif; ?>
                                             </div>
                                             <span class="badge">#<?= h($domain['rank']) ?></span>
                                         </li>
                                     <?php endforeach; ?>
                                 </ol>
+                                <?php if ($olderOnly): ?><p class="muted">Volgorde van de laatste Cloudflare-ranglijst.</p><?php endif; ?>
                             <?php endif; ?>
                             <?php if (!$socialOnly): ?>
                                 <p class="muted"><a href="https://radar.cloudflare.com/domains/nl">Bekijk de Nederlandse domeinranglijst ↗</a></p>
@@ -469,14 +572,35 @@ try {
                         <div class="feed-heading">
                             <div>
                                 <p class="source-label">Google Trends</p>
-                                <h2 id="website-hotspots-title"><?= $socialOnly ? 'Zoektrends rond sociale media' : 'Websites in opkomende zoekopdrachten' ?></h2>
-                                <?php if ($searchSnapshot !== null): ?>
+                                <h2 id="website-hotspots-title"><?= $olderOnly ? 'Stijgende zoekinteresse in websites' : ($socialOnly ? 'Zoektrends rond sociale media' : 'Websites in opkomende zoekopdrachten') ?></h2>
+                                <?php if ($olderOnly && $searchBaseline !== null): ?>
+                                    <p class="muted"><?= h(dutchDate($searchBaseline['fetched_at'])) ?> → <?= h(dutchDate($searchSnapshot['fetched_at'])) ?></p>
+                                <?php elseif ($searchSnapshot !== null): ?>
                                     <p class="muted"><?= h(dutchDate($searchSnapshot['fetched_at'])) ?></p>
                                 <?php endif; ?>
                             </div>
                         </div>
                         <div class="hotspot-content">
-                            <?php if ($searchSnapshot === null): ?>
+                            <?php if ($olderOnly): ?>
+                                <?php if ($olderSearchGains === []): ?>
+                                    <p class="empty-inline">Geen hogere zoekvolumeklassen gevonden voor dezelfde zoektrend in beide metingen.</p>
+                                <?php else: ?>
+                                    <ul>
+                                        <?php foreach (array_slice($olderSearchGains, 0, 5) as $lead): ?>
+                                            <li>
+                                                <div>
+                                                    <div class="origin-name">
+                                                        <strong><?= h($lead['domain']) ?></strong>
+                                                        <?php originIcon($lead['domain'], originFor(domain: $lead['domain'])); ?>
+                                                    </div>
+                                                    <p class="muted"><?= h($lead['title']) ?> · <a href="<?= h($lead['source']) ?>">Online in <?= h(substr($lead['since'], 0, 4)) ?></a></p>
+                                                </div>
+                                                <span class="badge"><?= h($lead['previous_label']) ?> → <?= h($lead['traffic_label']) ?></span>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                <?php endif; ?>
+                            <?php elseif ($searchSnapshot === null): ?>
                                 <p class="muted">Na de eerste import van Nederlandse Google Trends-gegevens verschijnen hier zoekopdrachten naar websites.</p>
                             <?php elseif ($websiteLeads === []): ?>
                                 <p class="empty-inline"><?= $socialOnly ? 'In de laatste meting kwamen geen zoekopdrachten naar herkende sociale platforms voor.' : 'In de laatst opgehaalde zoektrends kwamen geen domeinnamen of gevolgde websites voor.' ?></p>
@@ -499,8 +623,43 @@ try {
                             <p class="muted">De zoekopdrachten wijzen op interesse in een website. De zoekvolumes zijn schattingen van Google.</p>
                         </div>
                     </section>
+                    <?php if ($olderOnly && !$socialOnly): ?>
+                        <section aria-labelledby="older-games-title">
+                            <div class="feed-heading">
+                                <div>
+                                    <p class="source-label">Steam · Wereldwijd</p>
+                                    <h2 id="older-games-title">Stijgende games</h2>
+                                    <?php if ($steamBaseline !== null): ?>
+                                        <p class="muted"><?= h(dutchDate($steamBaseline['fetched_at'])) ?> → <?= h(dutchDate($steamSnapshot['fetched_at'])) ?></p>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <div class="hotspot-content">
+                                <?php if ($olderSteamGains === []): ?>
+                                    <p class="empty-inline">Geen stijging in het aantal spelers gevonden voor games die aan het leeftijdsfilter voldoen.</p>
+                                <?php else: ?>
+                                    <ul>
+                                        <?php foreach (array_slice($olderSteamGains, 0, 5) as $game): ?>
+                                            <li>
+                                                <div>
+                                                    <div class="origin-name">
+                                                        <a href="<?= h($game['source']) ?>"><?= h($game['title']) ?></a>
+                                                        <?php originIcon($game['title'], originFor($game['app_id'])); ?>
+                                                    </div>
+                                                    <p class="muted">Uitgebracht in <?= h(substr($game['since'], 0, 4)) ?></p>
+                                                    <p class="muted"><?= number_format($game['before'], 0, ',', '.') ?> → <?= number_format($game['after'], 0, ',', '.') ?> spelers</p>
+                                                </div>
+                                                <span class="badge">+<?= number_format($game['gain'], 0, ',', '.') ?></span>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                <?php endif; ?>
+                            </div>
+                        </section>
+                    <?php endif; ?>
                 </div>
             </div>
+            <?php if (!$olderOnly): ?>
             <h2 class="feeds-title">Bronoverzicht</h2>
             <?php if (!$socialOnly): ?>
             <div class="stats">
@@ -641,6 +800,7 @@ try {
                     <?php endif; ?>
                 </section>
             <?php endforeach; ?>
+            <?php endif; ?>
         <?php endif; ?>
     </main>
 </body>
