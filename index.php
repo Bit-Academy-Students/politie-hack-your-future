@@ -81,6 +81,25 @@ function h(mixed $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+function hasPublicChat(?string $title, ?string $description): bool
+{
+    $text = mb_strtolower(trim(($title ?? '') . ' ' . ($description ?? '')), 'UTF-8');
+    $groupChat = '/\b(?:group\s+chats?|groepschats?)\b/u';
+    $chatTerms = '(?:chat(?:ten)?|messag(?:e|es|ing)|bericht(?:en)?|priv[eé]bericht(?:en)?|directe berichten)';
+    $peerTerms = '(?:friends?|family|other users|users|people|communities|community|members|followers|'
+        . 'vrienden|familie|andere gebruikers|gebruikers|mensen|leden|volgers|elkaar|anderen)';
+
+    if (preg_match($groupChat, $text) === 1) {
+        return true;
+    }
+
+    $liveChat = '/\b(?:live|livestream)\b.{0,100}\b(?:interacties?|interactions?)\b.{0,80}\b(?:hosts?|makers|streamers|viewers|kijkers)\b/u';
+
+    return preg_match($liveChat, $text) === 1
+        || preg_match('/\b' . $chatTerms . '\b.{0,100}\b' . $peerTerms . '\b/us', $text) === 1
+        || preg_match('/\b' . $peerTerms . '\b.{0,100}\b' . $chatTerms . '\b/us', $text) === 1;
+}
+
 function webUrl(?string $url): ?string
 {
     if ($url === null || !filter_var($url, FILTER_VALIDATE_URL)) {
@@ -132,7 +151,8 @@ try {
          ORDER BY fetched_at DESC, snapshot_id DESC LIMIT 1'
     );
     $findRows = $db->prepare(
-        'SELECT o.*, a.app_id, a.category_id, a.store_url, a.developer_name, a.category_label, a.price_amount, a.currency, a.released_at,
+        'SELECT o.*, a.app_id, a.title AS app_title, a.description AS app_description,
+                a.category_id, a.store_url, a.developer_name, a.category_label, a.price_amount, a.currency, a.released_at,
                 (SELECT image.url FROM app_images image WHERE image.app_id = a.app_id
                  ORDER BY image.height DESC LIMIT 1) AS app_icon
          FROM trend_observations o
@@ -387,6 +407,14 @@ try {
                                         </span>
                                         <div class="mover-name">
                                             <?php if ($url !== null): ?><a href="<?= h($url) ?>"><?= h($app['title']) ?></a><?php else: ?><?= h($app['title']) ?><?php endif; ?>
+                                            <?php if (hasPublicChat($app['app_title'], $app['app_description'])): ?>
+                                                <span class="chat-capability" role="img" title="Chat tussen gebruikers" aria-label="Chat tussen gebruikers">
+                                                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                                        <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-5.5A7.5 7.5 0 1 1 20 11.5Z"></path>
+                                                        <path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"></path>
+                                                    </svg>
+                                                </span>
+                                            <?php endif; ?>
                                                 <?php if ($kind === 'releases'): ?>
                                                     <div class="muted">Uitgebracht op <?= h(dutchDate($app['released_at'], false)) ?></div>
                                                 <?php elseif ($app['category_label'] !== null): ?>
@@ -561,7 +589,17 @@ try {
                                     <?php foreach ($rows as $row): $url = webUrl($row['store_url']); ?>
                                         <tr>
                                             <td><?= h($row['chart_rank'] ?? '—') ?></td>
-                                            <td><?php if ($url !== null): ?><a href="<?= h($url) ?>" target="_blank" rel="noopener noreferrer"><?= h($row['title']) ?></a><?php else: ?><?= h($row['title']) ?><?php endif; ?></td>
+                                            <td>
+                                                <?php if ($url !== null): ?><a href="<?= h($url) ?>" target="_blank" rel="noopener noreferrer"><?= h($row['title']) ?></a><?php else: ?><?= h($row['title']) ?><?php endif; ?>
+                                                <?php if (hasPublicChat($row['app_title'], $row['app_description'])): ?>
+                                                    <span class="chat-capability" role="img" title="Chat tussen gebruikers" aria-label="Chat tussen gebruikers">
+                                                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                                            <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-5.5A7.5 7.5 0 1 1 20 11.5Z"></path>
+                                                            <path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"></path>
+                                                        </svg>
+                                                    </span>
+                                                <?php endif; ?>
+                                            </td>
                                             <td><?= h($row['developer_name'] ?? '—') ?></td>
                                             <td><?= h($row['category_label'] ?? '—') ?></td>
                                             <td class="nowrap"><?= $row['price_amount'] !== null ? h(trim(($row['currency'] === 'EUR' ? '€' : ($row['currency'] ?? '')) . ' ' . str_replace('.', ',', $row['price_amount']))) : '—' ?></td>

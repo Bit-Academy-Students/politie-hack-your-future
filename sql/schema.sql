@@ -1,9 +1,3 @@
--- SQLite. Run this against your existing database before running import.php.
--- Dates are UTC strings in YYYY-MM-DD HH:MM:SS format.
-PRAGMA foreign_keys = ON;
-
-BEGIN;
-
 CREATE TABLE IF NOT EXISTS sources (
     source_id INTEGER PRIMARY KEY,
     provider TEXT NOT NULL,
@@ -117,5 +111,3 @@ CREATE INDEX IF NOT EXISTS idx_observations_item
     ON trend_observations(item_id, snapshot_id);
 CREATE INDEX IF NOT EXISTS idx_source_items_app
     ON source_items(app_id);
-
-COMMIT;
