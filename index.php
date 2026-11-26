@@ -61,9 +61,6 @@ function isSocialDomain(string $host): bool
 
 function socialSearchDomain(string $term): ?string
 {
-    if ($term === 'threads') {
-        return 'threads.com';
-    }
     $domainPattern = '/[a-z0-9-]+(?:\.[a-z0-9-]+)+/i';
     preg_match_all($domainPattern, $term, $hosts);
     foreach ($hosts[0] as $host) {
@@ -96,79 +93,29 @@ function h(mixed $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-function verifiedChatSource(?string $appId, ?string $domain): ?string
+function hasPublicChat(?string $title, ?string $description): bool
 {
-    static $apps = null, $domains = [];
-    if ($apps === null) {
-        $apps = [];
-        $contents = @file_get_contents(__DIR__ . '/chat-bronnen.json');
-        $entries = $contents === false ? [] : json_decode($contents, true);
-        foreach (is_array($entries) ? $entries : [] as $entry) {
-            $url = $entry['source'] ?? null;
-            $source = is_string($url) ? webUrl($url) : null;
-            if ($source === null) {
-                continue;
-            }
-            foreach ((array) ($entry['app_store_ids'] ?? []) as $id) {
-                if (is_string($id) && ctype_digit($id)) {
-                    $apps[$id] = $source;
-                }
-            }
-            foreach ((array) ($entry['domains'] ?? []) as $host) {
-                if (is_string($host)) {
-                    $domains[strtolower($host)] = $source;
-                }
-            }
-        }
-    }
+    $text = mb_strtolower(trim(($title ?? '') . ' ' . ($description ?? '')), 'UTF-8');
+    $groupChat = '/\b(?:group\s+chats?|groepschats?)\b/u';
+    $chatTerms = '(?:chat(?:ten)?|messag(?:e|es|ing)|bericht(?:en)?|priv[eé]bericht(?:en)?|directe berichten)';
+    $peerTerms = '(?:friends?|family|other users|users|people|communities|community|members|followers|'
+        . 'vrienden|familie|andere gebruikers|gebruikers|mensen|leden|volgers|elkaar|anderen)';
+    $liveChat = '/\b(?:live|livestream)\b.{0,100}\b(?:interacties?|interactions?)\b.{0,80}\b(?:hosts?|makers|streamers|viewers|kijkers)\b/u';
 
-    $host = preg_replace('/\Awww\./', '', strtolower(rtrim($domain ?? '', '.')));
-    return $apps[$appId ?? ''] ?? $domains[$host] ?? null;
+    return preg_match($groupChat, $text) === 1
+        || preg_match($liveChat, $text) === 1
+        || preg_match('/\b' . $chatTerms . '\b.{0,100}\b' . $peerTerms . '\b/us', $text) === 1
+        || preg_match('/\b' . $peerTerms . '\b.{0,100}\b' . $chatTerms . '\b/us', $text) === 1;
 }
 
-function appDescriptionSuggestsChat(?string $description): bool
+function publicChatIcon(): void
 {
-    $text = mb_strtolower($description ?? '', 'UTF-8');
-    $sentences = preg_split('/(?<=[.!?])\s+|\R+/u', $text) ?: [];
-    $communication = '(?:chat(?:s|ten)?|messag(?:e|es|ing)|berichten)';
-    $people = '(?:friends?|other users|other players|other members|followers|each other|vrienden|andere gebruikers|andere spelers|andere leden|volgers|elkaar)';
-
-    foreach ($sentences as $sentence) {
-        if (preg_match('/\b(?:chatbots?|ai|kunstmatige intelligentie|automated|automatisch|support|customer service|klantenservice|helpdesk)\b/u', $sentence)
-            || preg_match('/\b(?:geen|zonder|niet|no|not|without|disables?)\b.{0,45}\b(?:chat\w*|messag\w*|berichten|priv[eé]berichten)\b/u', $sentence)
-            || preg_match('/\b(?:chat\w*|messag\w*|berichten)\b.{0,30}\b(?:unavailable|not supported|not available|niet beschikbaar|uitgeschakeld)\b/u', $sentence)) {
-            continue;
-        }
-        if (preg_match('/\b(?:direct (?:messages?|messaging)|directe berichten|priv[eé]berichten?|private messages?|group chats?|groepschats?)\b/u', $sentence)
-            || preg_match('/\b' . $communication . '\b.{0,45}\b' . $people . '\b/u', $sentence)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function renderChatBadge(?string $appId = null, ?string $description = null, ?string $domain = null): void
-{
-    $source = verifiedChatSource($appId, $domain);
-    if ($source === null && !appDescriptionSuggestsChat($description)) {
-        return;
-    }
-
-    $label = $source === null
-        ? 'Mogelijke chat tussen gebruikers volgens de appbeschrijving'
-        : 'Chat tussen gebruikers bevestigd. Bekijk de bron.';
-    $svg = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"'
+    echo '<span class="chat-capability" role="img" title="Chat tussen gebruikers" aria-label="Chat tussen gebruikers"'
+        . ' style="display:inline-flex;flex:0 0 20px;width:20px;height:20px;align-items:center;justify-content:center;color:var(--blue)">'
+        . '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"'
         . ' stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" aria-hidden="true" focusable="false">'
         . '<path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-5.5A7.5 7.5 0 1 1 20 11.5Z"></path>'
-        . '<path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"></path></svg>';
-    $text = ' title="' . h($label) . '" aria-label="' . h($label) . '"';
-    if ($source === null) {
-        echo '<span class="chat-capability chat-possible" role="img"' . $text . '>'
-            . $svg . '<span aria-hidden="true">?</span></span>';
-    } else {
-        echo '<a class="chat-capability" href="' . h($source) . '"' . $text
-            . ' target="_blank" rel="noopener noreferrer">' . $svg . '</a>';
-    }
+        . '<path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"></path></svg></span>';
 }
 
 function webUrl(?string $url): ?string
@@ -224,7 +171,7 @@ try {
          ORDER BY fetched_at DESC, snapshot_id DESC LIMIT 1'
     );
     $findRows = $db->prepare(
-        'SELECT o.*, a.app_id, a.description AS app_description,
+        'SELECT o.*, a.app_id, a.title AS app_title, a.description AS app_description,
                 a.category_id, a.store_url, a.developer_name, a.developer_url, a.category_label, a.price_amount, a.currency, a.released_at,
                 (SELECT image.url FROM app_images image WHERE image.app_id = a.app_id
                  ORDER BY image.height DESC LIMIT 1) AS app_icon
@@ -397,7 +344,7 @@ try {
                 $searchSnapshot = $snapshot;
                 foreach ($rows as $row) {
                     $term = mb_strtolower(trim($row['title']), 'UTF-8');
-                    $domain = $row['domain'] ?? $websiteAliases[$term] ?? socialSearchDomain($term) ?? $term;
+                    $domain = $row['domain'] ?? $websiteAliases[$term] ?? $term;
                     // Only explicit domain searches and exact configured aliases qualify.
                     // Article domains identify the publisher, not the subject of a search.
                     if (preg_match('/\A(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\z/', $domain)) {
@@ -519,7 +466,6 @@ $shownClimbers = $olderOnly ? array_values(array_filter($risingApps, static fn(a
                     <a href="<?= h(dashboardUrl($comparisonWindow, true, $olderOnly)) ?>"<?= $socialOnly ? ' aria-current="true"' : '' ?>>Alleen sociale media</a>
                 </nav>
             </div>
-            <p class="muted chat-legend">Het chat-icoon opent de bevestigende bron. Een vraagteken betekent dat de appbeschrijving op chat wijst. Zonder icoon is de chatfunctie onbekend.</p>
             <?php if ($olderOnly): ?>
                 <p class="muted older-note">Uitgebracht of online vóór <?= h(dutchDate($ageCutoff, false)) ?>. Elke bron heeft een eigen ranglijst.</p>
             <?php endif; ?>
@@ -574,7 +520,7 @@ $shownClimbers = $olderOnly ? array_values(array_filter($risingApps, static fn(a
                                             <div class="origin-name">
                                                 <?php if ($url !== null): ?><a href="<?= h($url) ?>"><?= h($app['title']) ?></a><?php else: ?><span><?= h($app['title']) ?></span><?php endif; ?>
                                                 <?php originIcon($app['title'], originFor($app['app_id'], $app['developer_url'])); ?>
-                                                <?php renderChatBadge($app['app_id'], $app['app_description']); ?>
+                                                <?php if (hasPublicChat($app['app_title'], $app['app_description'])): publicChatIcon(); endif; ?>
                                             </div>
                                             <?php if ($olderOnly || in_array($kind, ['releases', 'legacy'], true)): ?>
                                                 <div class="muted">Uitgebracht op <?= h(dutchDate($app['released_at'], false)) ?></div>
@@ -635,7 +581,6 @@ $shownClimbers = $olderOnly ? array_values(array_filter($risingApps, static fn(a
                                                 <div class="origin-name">
                                                     <strong><?= h($domain['domain']) ?></strong>
                                                     <?php originIcon($domain['domain'], originFor(domain: $domain['domain'])); ?>
-                                                    <?php renderChatBadge(domain: $domain['domain']); ?>
                                                 </div>
                                                 <?php if ($olderOnly): ?><p class="muted"><a href="<?= h($domain['source']) ?>">Online in <?= h(substr($domain['since'], 0, 4)) ?></a></p><?php endif; ?>
                                             </div>
@@ -674,7 +619,6 @@ $shownClimbers = $olderOnly ? array_values(array_filter($risingApps, static fn(a
                                                     <div class="origin-name">
                                                         <strong><?= h($lead['domain']) ?></strong>
                                                         <?php originIcon($lead['domain'], originFor(domain: $lead['domain'])); ?>
-                                                        <?php renderChatBadge(domain: $lead['domain']); ?>
                                                     </div>
                                                     <p class="muted"><?= h($lead['title']) ?> · <a href="<?= h($lead['source']) ?>">Online in <?= h(substr($lead['since'], 0, 4)) ?></a></p>
                                                 </div>
@@ -695,7 +639,6 @@ $shownClimbers = $olderOnly ? array_values(array_filter($risingApps, static fn(a
                                                 <div class="origin-name">
                                                     <strong><?= h($lead['domain']) ?></strong>
                                                     <?php originIcon($lead['domain'], originFor(domain: $lead['domain'])); ?>
-                                                    <?php renderChatBadge(domain: $lead['domain']); ?>
                                                 </div>
                                                 <div class="muted">Gezocht op Google: <?= h($lead['title']) ?></div>
                                             </div>
@@ -827,7 +770,7 @@ $shownClimbers = $olderOnly ? array_values(array_filter($risingApps, static fn(a
                                                 <div class="origin-name">
                                                     <?php if ($url !== null): ?><a href="<?= h($url) ?>" target="_blank" rel="noopener noreferrer"><?= h($row['title']) ?></a><?php else: ?><span><?= h($row['title']) ?></span><?php endif; ?>
                                                     <?php originIcon($row['title'], originFor($row['app_id'], $row['developer_url'])); ?>
-                                                    <?php renderChatBadge($row['app_id'], $row['app_description']); ?>
+                                                    <?php if (hasPublicChat($row['app_title'], $row['app_description'])): publicChatIcon(); endif; ?>
                                                 </div>
                                             </td>
                                             <td><?= h($row['developer_name'] ?? '—') ?></td>
@@ -859,7 +802,6 @@ $shownClimbers = $olderOnly ? array_values(array_filter($risingApps, static fn(a
                                             <h3><?= h($row['title']) ?></h3>
                                             <?php if ($row['app_id'] !== null || $domain !== null): ?>
                                                 <?php originIcon($row['title'], originFor($row['app_id'], $row['developer_url'], $domain)); ?>
-                                                <?php renderChatBadge($row['app_id'], $row['app_description'], $domain); ?>
                                             <?php endif; ?>
                                         </div>
                                         <?php if ($isGoogle): ?><span class="badge"><?= h($row['traffic_label'] ?? 'Zoekvolume onbekend') ?></span><?php endif; ?>
