@@ -488,6 +488,7 @@ try {
             <div class="stats">
                 <?php foreach (
                     [
+                        //comment
                         'sources' => 'Bronnen',
                         'apps' => 'Apps en games',
                         'queries' => 'Zoekopdrachten',
