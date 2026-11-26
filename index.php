@@ -103,7 +103,7 @@ $error = null;
 $totals = [];
 $feeds = [];
 $appSnapshot = $appBaseline = $searchSnapshot = $radarSnapshot = null;
-$risingApps = $chartEntries = $recentReleases = $websiteLeads = $radarDomains = [];
+$risingApps = $legacyRisingApps = $chartEntries = $recentReleases = $websiteLeads = $radarDomains = [];
 $chartHistory = [];
 try {
     if (!is_file($databasePath)) {
@@ -266,6 +266,11 @@ try {
                     }
                     usort($risingApps, static fn(array $a, array $b): int => ($b['gain'] <=> $a['gain']) ?: ($a['chart_rank'] <=> $b['chart_rank']));
                     usort($chartEntries, static fn(array $a, array $b): int => $a['chart_rank'] <=> $b['chart_rank']);
+                    $legacyRisingApps = array_values(array_filter(
+                        $risingApps,
+                        static fn(array $app): bool =>
+                            $app['released_at'] !== null && $app['released_at'] < '2010-01-01'
+                    ));
                 }
             }
 
@@ -368,6 +373,7 @@ try {
                             [
                                 'climbs' => ['label' => null, 'items' => $risingApps],
                                 'entries' => ['label' => 'Nieuw in de top 100', 'items' => $chartEntries],
+                                'legacy' => ['label' => 'Stijgende apps uit 2009 of ouder', 'items' => $legacyRisingApps],
                                 'releases' => ['label' => 'Uitgebracht in de afgelopen 30 dagen', 'items' => $recentReleases],
                             ] as $kind => ['label' => $label, 'items' => $items]
                         ): ?>
@@ -387,7 +393,7 @@ try {
                                         </span>
                                         <div class="mover-name">
                                             <?php if ($url !== null): ?><a href="<?= h($url) ?>"><?= h($app['title']) ?></a><?php else: ?><?= h($app['title']) ?><?php endif; ?>
-                                                <?php if ($kind === 'releases'): ?>
+                                                <?php if (in_array($kind, ['releases', 'legacy'], true)): ?>
                                                     <div class="muted">Uitgebracht op <?= h(dutchDate($app['released_at'], false)) ?></div>
                                                 <?php elseif ($app['category_label'] !== null): ?>
                                                     <div class="muted"><?= h($app['category_label']) ?></div>
@@ -409,6 +415,9 @@ try {
                                                 <div class="rank-gain"><strong>+<?= h($app['gain']) ?></strong> <span><?= $app['gain'] === 1 ? 'plaats' : 'plaatsen' ?></span></div>
                                                 <div class="rank-change"><span>#<?= h($app['previous_rank']) ?></span> <span aria-label="naar">→</span> <strong>#<?= h($app['chart_rank']) ?></strong></div>
                                                 <div class="gain-track" aria-hidden="true"><span style="width: <?= (int) round(100 * $app['gain'] / $risingApps[0]['gain']) ?>%"></span></div>
+                                            <?php elseif ($kind === 'legacy'): ?>
+                                                <div class="rank-gain"><strong>+<?= h($app['gain']) ?></strong> <span><?= $app['gain'] === 1 ? 'plaats' : 'plaatsen' ?></span></div>
+                                                <div class="rank-change"><span>#<?= h($app['previous_rank']) ?></span> <span aria-label="naar">→</span> <strong>#<?= h($app['chart_rank']) ?></strong></div>
                                             <?php else: ?>
                                                 <span class="badge rank-now">#<?= h($app['chart_rank']) ?></span>
                                             <?php endif; ?>
