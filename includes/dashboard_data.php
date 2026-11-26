@@ -35,8 +35,8 @@ try {
          ORDER BY fetched_at DESC, snapshot_id DESC LIMIT 1'
     );
     $findRows = $db->prepare(
-        'SELECT o.*, a.app_id, a.title AS app_title, a.description AS app_description,
-                a.category_id, a.store_url, a.developer_name, a.developer_url, a.category_label, a.price_amount, a.currency, a.released_at,
+        'SELECT o.*, a.app_id, a.description AS app_description,
+                a.category_id, a.store_url, a.developer_name, a.developer_url, a.category_label, a.released_at,
                 (SELECT image.url FROM app_images image WHERE image.app_id = a.app_id
                  ORDER BY image.height DESC LIMIT 1) AS app_icon
          FROM trend_observations o

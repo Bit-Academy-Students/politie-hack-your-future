@@ -68,8 +68,6 @@
                                         <th scope="col">App</th>
                                         <th scope="col">Ontwikkelaar</th>
                                         <th scope="col">Categorie</th>
-                                        <th scope="col">Prijs</th>
-                                        <th scope="col">Grafiek</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -80,23 +78,17 @@
                                                 <div class="origin-name">
                                                     <?php if ($url !== null): ?><a href="<?= h($url) ?>" target="_blank" rel="noopener noreferrer"><?= h($row['title']) ?></a><?php else: ?><span><?= h($row['title']) ?></span><?php endif; ?>
                                                     <?php originIcon($row['title'], originFor($row['app_id'], $row['developer_url'])); ?>
-                                                    <?php if (hasPublicChat($row['app_title'], $row['app_description'])): publicChatIcon(); endif; ?>
+                                                    <?php renderChatBadge($row['app_id'], $row['app_description']); ?>
                                                 </div>
                                             </td>
                                             <td><?= h($row['developer_name'] ?? '—') ?></td>
                                             <td><?= h($row['category_label'] ?? '—') ?></td>
-                                            <td class="nowrap"><?= $row['price_amount'] !== null ? h(trim(($row['currency'] === 'EUR' ? '€' : ($row['currency'] ?? '')) . ' ' . str_replace('.', ',', $row['price_amount']))) : '—' ?></td>
-                                            <td>
-                                                <?php if ($row['app_id'] !== null): ?>
-                                                    <a href="grafieken.php?id=<?= h(rawurlencode((string) $row['app_id'])) ?>">Grafiek bekijken</a>
-                                                <?php endif; ?>
-                                            </td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
                             </table>
                         </div>
-                        <p class="muted" style="padding: 10px 22px">De appnamen en posities komen uit deze meting. Ontwikkelaar, categorie en prijs komen uit de laatst opgeslagen appgegevens.</p>
+                        <p class="muted" style="padding: 10px 22px">De appnamen en posities komen uit deze meting. Ontwikkelaar en categorie komen uit de laatst opgeslagen appgegevens.</p>
                     <?php else: ?>
                         <div class="trends">
                             <?php foreach ($rows as $row):
@@ -112,6 +104,7 @@
                                             <h3><?= h($row['title']) ?></h3>
                                             <?php if ($row['app_id'] !== null || $domain !== null): ?>
                                                 <?php originIcon($row['title'], originFor($row['app_id'], $row['developer_url'], $domain)); ?>
+                                                <?php renderChatBadge($row['app_id'], $row['app_description'], $domain); ?>
                                             <?php endif; ?>
                                         </div>
                                         <?php if ($isGoogle): ?><span class="badge"><?= h($row['traffic_label'] ?? 'Zoekvolume onbekend') ?></span><?php endif; ?>

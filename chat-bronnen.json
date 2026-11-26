@@ -1,0 +1,48 @@
+[
+    {
+        "name": "Threads (app)",
+        "app_store_ids": ["6446901002"],
+        "source": "https://about.fb.com/news/2025/07/introducing-messaging-highlighted-perspectives-threads/"
+    },
+    {
+        "name": "Threads (web)",
+        "domains": ["threads.com", "threads.net"],
+        "source": "https://www.threads.com/@conno_r/post/DX9yHGTDu7h"
+    },
+    {
+        "name": "Reddit",
+        "app_store_ids": ["1064216828"],
+        "domains": ["reddit.com", "chat.reddit.com"],
+        "source": "https://support.reddithelp.com/hc/en-us/articles/39411701270036-How-to-use-Reddit-Chat"
+    },
+    {
+        "name": "Discord",
+        "app_store_ids": ["985746746"],
+        "domains": ["discord.com"],
+        "source": "https://support.discord.com/hc/en-us/articles/4412085582359-Text-Channels-Text-Chat-In-Voice-Channels"
+    },
+    {
+        "name": "X",
+        "app_store_ids": ["333903271"],
+        "domains": ["x.com", "twitter.com"],
+        "source": "https://help.x.com/en/using-x/direct-messages"
+    },
+    {
+        "name": "WhatsApp",
+        "app_store_ids": ["310633997", "1386412985"],
+        "domains": ["whatsapp.com", "web.whatsapp.com"],
+        "source": "https://blog.whatsapp.com/whats-app-web/"
+    },
+    {
+        "name": "Telegram",
+        "app_store_ids": ["686449807"],
+        "domains": ["telegram.org", "web.telegram.org"],
+        "source": "https://telegram.org/faq"
+    },
+    {
+        "name": "Twitch",
+        "app_store_ids": ["460177396"],
+        "domains": ["twitch.tv", "m.twitch.tv"],
+        "source": "https://help.twitch.tv/s/article/chat-basics"
+    }
+]

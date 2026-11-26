@@ -48,7 +48,7 @@
                                             <div class="origin-name">
                                                 <?php if ($url !== null): ?><a href="<?= h($url) ?>"><?= h($app['title']) ?></a><?php else: ?><span><?= h($app['title']) ?></span><?php endif; ?>
                                                 <?php originIcon($app['title'], originFor($app['app_id'], $app['developer_url'])); ?>
-                                                <?php if (hasPublicChat($app['app_title'], $app['app_description'])): publicChatIcon(); endif; ?>
+                                                <?php renderChatBadge($app['app_id'], $app['app_description']); ?>
                                             </div>
                                             <?php if ($olderOnly || in_array($kind, ['releases', 'legacy'], true)): ?>
                                                 <div class="muted">Uitgebracht op <?= h(dutchDate($app['released_at'], false)) ?></div>

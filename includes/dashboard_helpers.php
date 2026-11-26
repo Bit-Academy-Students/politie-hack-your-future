@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 $databasePath = dirname(__DIR__) . '/trends.sqlite';
 
-$websiteAliases = [];
+$websiteAliases = ['threads' => 'threads.com'];
 
 $comparisonWindows = ['24h' => 86400, '7d' => 7 * 86400];
 $requestedWindow = $_GET['window'] ?? '24h';
@@ -90,29 +90,79 @@ function h(mixed $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-function hasPublicChat(?string $title, ?string $description): bool
+function verifiedChatSource(?string $appId, ?string $domain): ?string
 {
-    $text = mb_strtolower(trim(($title ?? '') . ' ' . ($description ?? '')), 'UTF-8');
-    $groupChat = '/\b(?:group\s+chats?|groepschats?)\b/u';
-    $chatTerms = '(?:chat(?:ten)?|messag(?:e|es|ing)|bericht(?:en)?|priv[eé]bericht(?:en)?|directe berichten)';
-    $peerTerms = '(?:friends?|family|other users|users|people|communities|community|members|followers|'
-        . 'vrienden|familie|andere gebruikers|gebruikers|mensen|leden|volgers|elkaar|anderen)';
-    $liveChat = '/\b(?:live|livestream)\b.{0,100}\b(?:interacties?|interactions?)\b.{0,80}\b(?:hosts?|makers|streamers|viewers|kijkers)\b/u';
+    static $apps = null, $domains = [];
+    if ($apps === null) {
+        $apps = [];
+        $contents = @file_get_contents(dirname(__DIR__) . '/chat-bronnen.json');
+        $entries = $contents === false ? [] : json_decode($contents, true);
+        foreach (is_array($entries) ? $entries : [] as $entry) {
+            $url = $entry['source'] ?? null;
+            $source = is_string($url) ? webUrl($url) : null;
+            if ($source === null) {
+                continue;
+            }
+            foreach ((array) ($entry['app_store_ids'] ?? []) as $id) {
+                if (is_string($id) && ctype_digit($id)) {
+                    $apps[$id] = $source;
+                }
+            }
+            foreach ((array) ($entry['domains'] ?? []) as $host) {
+                if (is_string($host)) {
+                    $domains[strtolower($host)] = $source;
+                }
+            }
+        }
+    }
 
-    return preg_match($groupChat, $text) === 1
-        || preg_match($liveChat, $text) === 1
-        || preg_match('/\b' . $chatTerms . '\b.{0,100}\b' . $peerTerms . '\b/us', $text) === 1
-        || preg_match('/\b' . $peerTerms . '\b.{0,100}\b' . $chatTerms . '\b/us', $text) === 1;
+    $host = preg_replace('/\Awww\./', '', strtolower(rtrim($domain ?? '', '.')));
+    return $apps[$appId ?? ''] ?? $domains[$host] ?? null;
 }
 
-function publicChatIcon(): void
+function appDescriptionSuggestsChat(?string $description): bool
 {
-    echo '<span class="chat-capability" role="img" title="Chat tussen gebruikers" aria-label="Chat tussen gebruikers"'
-        . ' style="display:inline-flex;flex:0 0 20px;width:20px;height:20px;align-items:center;justify-content:center;color:var(--blue)">'
-        . '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"'
+    $text = mb_strtolower($description ?? '', 'UTF-8');
+    $sentences = preg_split('/(?<=[.!?])\s+|\R+/u', $text) ?: [];
+    $communication = '(?:chat(?:s|ten)?|messag(?:e|es|ing)|berichten)';
+    $people = '(?:friends?|other users|other players|other members|followers|each other|vrienden|andere gebruikers|andere spelers|andere leden|volgers|elkaar)';
+
+    foreach ($sentences as $sentence) {
+        if (preg_match('/\b(?:chatbots?|ai|kunstmatige intelligentie|automated|automatisch|support|customer service|klantenservice|helpdesk)\b/u', $sentence)
+            || preg_match('/\b(?:geen|zonder|niet|no|not|without|disables?)\b.{0,45}\b(?:chat\w*|messag\w*|berichten|priv[eé]berichten)\b/u', $sentence)
+            || preg_match('/\b(?:chat\w*|messag\w*|berichten)\b.{0,30}\b(?:unavailable|not supported|not available|niet beschikbaar|uitgeschakeld)\b/u', $sentence)) {
+            continue;
+        }
+        if (preg_match('/\b(?:direct (?:messages?|messaging)|directe berichten|priv[eé]berichten?|private messages?|group chats?|groepschats?)\b/u', $sentence)
+            || preg_match('/\b' . $communication . '\b.{0,45}\b' . $people . '\b/u', $sentence)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function renderChatBadge(?string $appId = null, ?string $description = null, ?string $domain = null): void
+{
+    $source = verifiedChatSource($appId, $domain);
+    if ($source === null && !appDescriptionSuggestsChat($description)) {
+        return;
+    }
+
+    $label = $source === null
+        ? 'Mogelijke chat tussen gebruikers volgens de appbeschrijving'
+        : 'Chat tussen gebruikers bevestigd. Bekijk de bron.';
+    $svg = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"'
         . ' stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" aria-hidden="true" focusable="false">'
         . '<path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-5.5A7.5 7.5 0 1 1 20 11.5Z"></path>'
-        . '<path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"></path></svg></span>';
+        . '<path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"></path></svg>';
+    $text = ' title="' . h($label) . '" aria-label="' . h($label) . '"';
+    if ($source === null) {
+        echo '<span class="chat-capability chat-possible" role="img"' . $text . '>'
+            . $svg . '<span aria-hidden="true">?</span></span>';
+    } else {
+        echo '<a class="chat-capability" href="' . h($source) . '"' . $text
+            . ' target="_blank" rel="noopener noreferrer">' . $svg . '</a>';
+    }
 }
 
 function webUrl(?string $url): ?string
