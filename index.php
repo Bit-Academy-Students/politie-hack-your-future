@@ -308,7 +308,7 @@ try {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Politie app tracker · Internettrends in Nederland</title>
+    <title>OSINT app-tracker · Internettrends in Nederland en over de wereld.</title>
     <link rel="stylesheet" href="style.css?v=<?= (int) filemtime(__DIR__ . '/style.css') ?>">
 </head>
 
@@ -316,7 +316,7 @@ try {
     <main>
         <header class="masthead">
             <div class="masthead-top">
-                <div class="brand"><span class="brand-mark" aria-hidden="true"></span>Politie app tracker</div>
+                <div class="brand"><span class="brand-mark" aria-hidden="true"></span>OSINT app-tracker</div>
                 <form method="get">
                     <input type="hidden" name="window" value="<?= h($comparisonWindow) ?>">
                     <?php if ($socialOnly): ?><input type="hidden" name="view" value="social"><?php endif; ?>
