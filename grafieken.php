@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/herkomst.php';
+
 $databasePath = __DIR__ . '/trends.sqlite';
 
 $appId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
@@ -15,7 +17,7 @@ $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
 // App ophalen
 $stmt = $db->prepare(
-    'SELECT app_id, title FROM apps WHERE app_id = ?'
+    'SELECT app_id, name, title, developer_url FROM apps WHERE app_id = ?'
 );
 $stmt->execute([$appId]);
 $app = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -47,6 +49,7 @@ $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>App-grafiek</title>
     <link rel="stylesheet" href="style.css?v=<?= (int) filemtime(__DIR__ . '/style.css') ?>">
+    <script defer src="herkomst.js?v=<?= (int) filemtime(__DIR__ . '/herkomst.js') ?>"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -61,7 +64,10 @@ $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 
     <div class="masthead-copy">
-        <h1><?= htmlspecialchars($app['title'], ENT_QUOTES, 'UTF-8') ?></h1>
+        <div class="origin-name">
+            <h1><?= htmlspecialchars($app['title'] ?? $app['name'], ENT_QUOTES, 'UTF-8') ?></h1>
+            <?php originIcon($app['name'], originFor($app['app_id'], $app['developer_url'])); ?>
+        </div>
         <p>Historische posities in de Nederlandse App Store.</p>
     </div>
 </header>
