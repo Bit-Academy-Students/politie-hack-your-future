@@ -40,26 +40,14 @@ php -m
    sqlite3 trends.sqlite ".read sql/schema.sql"
    ```
 
-3. Controleer `$databasePath` in **beide** PHP-bestanden. In `import.php` staat
-   dit onderaan, in `index.php` bovenaan. Standaard gebruiken ze:
-
-   ```php
-   $databasePath = __DIR__ . '/trends.sqlite';
-   ```
-
-4. Haal de gegevens op:
-
-   ```powershell
-   php import.php
-   ```
-
-5. Start de lokale webserver:
+3. Start de lokale webserver:
 
    ```powershell
    php -S 127.0.0.1:4173
    ```
 
-6. Open [het overzicht](http://127.0.0.1:4173/) in je browser.
+4. Open [het overzicht](http://127.0.0.1:4173/) in je browser en klik op
+   **Gegevens bijwerken** om de eerste meting op te halen.
 
 PHP haalt de bronnen tijdens het importeren op vanaf de server. Daardoor heeft
 de browser geen externe CORS-toegang nodig. Open de overzichtspagina via de
@@ -67,14 +55,14 @@ PHP-server, zodat de PHP-code wordt uitgevoerd.
 
 ## Gegevens bijwerken
 
-Voer `php import.php` opnieuw uit wanneer je nieuwe gegevens wilt opslaan. Het
-script probeert de ingestelde bronnen en toont hoeveel items per bron zijn geïmporteerd.
-Als één bron mislukt, worden de overige bronnen alsnog geprobeerd. Bij een fout eindigt
-het script met exitcode 1.
+Klik op **Gegevens bijwerken** om de App Store, Google Trends en Steam opnieuw
+op te halen. Als de PHP-server een `CLOUDFLARE_API_TOKEN` heeft, wordt ook
+Cloudflare Radar bijgewerkt. Het dashboard toont het resultaat per bron en
+behoudt de gekozen filters. Bij een mislukte bron blijven eerdere metingen
+beschikbaar en worden de overige bronnen alsnog geprobeerd.
 
-De knop **Overzicht vernieuwen** leest de database opnieuw. Nieuwe
-brondata wordt opgehaald door het importscript. Voor regelmatige metingen kun je
-`php import.php` zelf periodiek uitvoeren, bijvoorbeeld via Windows Taakplanner.
+Voor geplande metingen kun je `php import.php` blijven gebruiken, bijvoorbeeld via
+Windows Taakplanner. Bij een fout eindigt het script met exitcode 1.
 
 ## Database en opslag
 
@@ -106,17 +94,14 @@ opschoning; de database groeit bij iedere succesvolle import. Alle datums en
 tijden worden als UTC-tekst opgeslagen. Prijzen worden als de oorspronkelijke
 decimale tekst opgeslagen om de precisie te behouden.
 
-Standaard staat de database naast de PHP-bestanden. Wil je deze buiten de
-publieke webmap bewaren, maak dan bijvoorbeeld een map `data` naast de projectmap
-en stel in beide scripts hetzelfde pad in:
-
-```php
-$databasePath = __DIR__ . '/../data/trendradar.sqlite';
-```
+Standaard staat `trends.sqlite` in de projectmap. Wil je de database buiten de
+publieke webmap bewaren, pas dan `$databasePath` in `includes/dashboard_helpers.php`
+aan. Als je ook via de terminal importeert, pas dan het pad in de aanroep van
+`importTrends()` onderaan `import.php` aan.
 
 Maak de database en tabellen op die locatie vooraf aan. PHP heeft leesrechten
 nodig voor het overzicht en schrijfrechten op de database en de bijbehorende map
-voor imports. Het databasepad wordt ingesteld met `$databasePath` in beide scripts.
+voor imports.
 
 ## Aangesloten bronnen
 

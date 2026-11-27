@@ -20,7 +20,7 @@
             <?php if ($feeds === [] && $radarSnapshot === null): ?>
                 <div class="empty">
                     <h2>Nog geen gegevens</h2>
-                    <p>Voer <code>php import.php</code> uit en vernieuw daarna deze pagina.</p>
+                    <p>Klik bovenaan op <strong>Gegevens bijwerken</strong> om de eerste meting op te halen.</p>
                 </div>
             <?php endif; ?>
 
@@ -57,7 +57,7 @@
                         <?php if ($socialOnly && $snapshot !== false): ?>
                             <div class="empty">Er zijn in de laatste meting geen resultaten voor dit filter.</div>
                         <?php else: ?>
-                            <div class="empty">De laatste meting van deze bron bevat geen waarnemingen. Voer <code>php import.php</code> uit om gegevens op te halen.</div>
+                            <div class="empty">De laatste meting van deze bron bevat geen waarnemingen. Klik op <strong>Gegevens bijwerken</strong> voor een nieuwe meting.</div>
                         <?php endif; ?>
                     <?php elseif ($isApple): ?>
                         <div class="scroll" role="region" aria-label="Laatste ranglijst van de App Store" tabindex="0">
