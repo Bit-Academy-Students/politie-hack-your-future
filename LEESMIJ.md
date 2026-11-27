@@ -65,16 +65,31 @@ PHP haalt de bronnen tijdens het importeren op vanaf de server. Daardoor heeft
 de browser geen externe CORS-toegang nodig. Open de overzichtspagina via de
 PHP-server, zodat de PHP-code wordt uitgevoerd.
 
+## App Store-samenvatting met Ollama
+
+Start Ollama op `http://localhost:11434` met een geïnstalleerd lokaal tekstmodel.
+Open op de [homepagina](http://127.0.0.1:4173/#app-samenvatting) het onderdeel
+**App Store-samenvatting**. Plak een Apple App Store-link of een app-ID en kies
+**Maak samenvatting**. Bij een los app-ID gebruikt het overzicht de Nederlandse App Store.
+
+PHP haalt de openbare appbeschrijving op bij Apple. Ollama genereert lokaal een korte
+Nederlandse uitleg en een lijst met hoofdfuncties. De pagina kiest het kleinste beschikbare
+lokale tekstmodel. Zet `OLLAMA_MODEL` vóór het starten van de PHP-server om een ander
+geïnstalleerd model uit `ollama list` te gebruiken, bijvoorbeeld `$env:OLLAMA_MODEL = 'qwen3.5:4b'`
+in PowerShell.
+
+De pagina slaat het resultaat op in `trends.sqlite`. Open het later via **Opgeslagen
+samenvattingen** op de homepagina. Een nieuwe samenvatting voor dezelfde app en hetzelfde
+App Store-land vervangt de vorige. De tabel wordt automatisch bij de eerste opslag aangemaakt.
+
 ## Gegevens bijwerken
 
-Voer `php import.php` opnieuw uit wanneer je nieuwe gegevens wilt opslaan. Het
-script probeert de ingestelde bronnen en toont hoeveel items per bron zijn geïmporteerd.
-Als één bron mislukt, worden de overige bronnen alsnog geprobeerd. Bij een fout eindigt
-het script met exitcode 1.
+Klik op **Gegevens bijwerken** bovenaan het dashboard om nieuwe brongegevens op te halen.
+Het dashboard toont daarna per bron het aantal opgeslagen items of een foutmelding.
+Als één bron mislukt, worden de overige bronnen alsnog geprobeerd.
 
-De knop **Overzicht vernieuwen** leest de database opnieuw. Nieuwe
-brondata wordt opgehaald door het importscript. Voor regelmatige metingen kun je
-`php import.php` zelf periodiek uitvoeren, bijvoorbeeld via Windows Taakplanner.
+Je kunt dezelfde import ook uitvoeren met `php import.php`, bijvoorbeeld periodiek
+via Windows Taakplanner. Bij een fout eindigt het script met exitcode 1.
 
 ## Database en opslag
 
@@ -85,6 +100,7 @@ De database bevat deze tabellen:
 | `sources` | Provider, feed, land en vaste bron-URL. |
 | `apps` | Laatst bekende appgegevens, zoals naam, ontwikkelaar, categorie en prijs. |
 | `app_images` | App-iconen per formaat. |
+| `app_summaries` | Laatste AI-samenvatting en functies per App Store-app en land, met model en tijdstip. |
 | `feed_snapshots` | Ophaaltijd, beschikbare bronupdate en het oorspronkelijke JSON- of XML-antwoord. |
 | `source_items` | Herbruikbare identificatie van apps en zoektermen binnen een bron. |
 | `trend_observations` | Waarnemingen per snapshot, inclusief rang of verkeersklasse. |
@@ -187,8 +203,8 @@ Appnamen en rangen komen uit het getoonde snapshot. Ontwikkelaar, categorie en
 prijs komen uit de laatst opgeslagen appgegevens. Een ontbrekende database,
 ontbrekende tabellen of een lege database krijgt een melding op de pagina.
 
-De overzichtspagina leest alleen uit de database. De browser hoeft niet open
-te blijven voor imports die je afzonderlijk uitvoert.
+De overzichtspagina schrijft naar de database als je nieuwe trendgegevens ophaalt of
+een app laat samenvatten. Afzonderlijke imports lopen ook met een gesloten browser.
 
 ## Historie en interpretatie
 
@@ -217,9 +233,10 @@ van toepassing.
 
 | Bestand | Functie |
 | --- | --- |
-| `schema.sql` | Alle tabellen, relaties en indexen voor SQLite. |
-| `import.php` | Importfuncties en het startpunt voor imports via de terminal. |
+| `sql/schema.sql` | Tabellen, relaties en indexen voor de trendgegevens. |
+| `import.php` | Importfuncties voor het dashboard en de terminal. |
 | `index.php` | Overzichtspagina met ingebouwde vormgeving. |
+| `app-summaries.php` | App Store-lookup, samenvatten met Ollama en opslag in SQLite. |
 | `README.md` | Installatie, gebruik en uitleg over de gegevens. |
 
 ## Controle

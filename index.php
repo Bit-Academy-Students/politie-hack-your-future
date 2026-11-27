@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/herkomst.php';
 require_once __DIR__ . '/leeftijden.php';
+require_once __DIR__ . '/app-summaries.php';
 
 $databasePath = __DIR__ . '/trends.sqlite';
 
@@ -18,12 +19,13 @@ $olderOnly = ($_GET['tab'] ?? null) === 'older';
 $ageCutoff = (new DateTimeImmutable('today', new DateTimeZone('Europe/Amsterdam')))
     ->sub(new DateInterval('P7Y'))->format('Y-m-d');
 
-function dashboardUrl(string $window, bool $socialOnly, bool $olderOnly): string
+function dashboardUrl(string $window, bool $socialOnly, bool $olderOnly, ?string $summaryKey = null): string
 {
     return '?' . http_build_query(array_filter([
         'window' => $window,
         'view' => $socialOnly ? 'social' : null,
         'tab' => $olderOnly ? 'older' : null,
+        'samenvatting' => $summaryKey,
     ]));
 }
 
@@ -136,6 +138,84 @@ function dutchDate(string $utc, bool $withTime = true): string
     return $withTime ? $label . ', ' . $date->format('H:i') : $label;
 }
 
+$requestMethod = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$importDashboardUrl = dashboardUrl($comparisonWindow, $socialOnly, $olderOnly);
+session_start(['use_strict_mode' => 1, 'cookie_httponly' => 1, 'cookie_samesite' => 'Lax']);
+$importToken = $_SESSION['import_token'] ??= bin2hex(random_bytes(32));
+
+if ($requestMethod === 'POST' && ($_POST['action'] ?? null) === 'import-trends') {
+    $submittedToken = $_POST['import_token'] ?? null;
+    if (!is_string($submittedToken) || !hash_equals($importToken, $submittedToken)) {
+        http_response_code(403);
+        exit('Vernieuw de dashboardpagina en probeer het opnieuw.');
+    }
+
+    $_SESSION['import_token'] = bin2hex(random_bytes(32));
+    require_once __DIR__ . '/import.php';
+    set_time_limit(180);
+
+    $importStatus = [];
+    try {
+        foreach (importTrends($databasePath) as $import => $result) {
+            if ($result['error'] !== null) {
+                error_log($import . ': ' . $result['error']);
+                $importStatus[] = $result['source'] . ' kon niet worden bijgewerkt.';
+            } else {
+                $count = $result['count'];
+                $importStatus[] = $result['source'] . ' bijgewerkt (' . $count
+                    . ($count === 1 ? ' resultaat).' : ' resultaten).');
+            }
+        }
+    } catch (RuntimeException $error) {
+        error_log('Trendimport: ' . $error->getMessage());
+        $importStatus[] = 'Bijwerken mislukt. De SQLite-database kon niet worden geopend.';
+    }
+
+    $_SESSION['import_status'] = $importStatus;
+    session_write_close();
+    header('Location: ' . $importDashboardUrl, true, 303);
+    exit;
+}
+$importStatus = $_SESSION['import_status'] ?? [];
+unset($_SESSION['import_status']);
+session_write_close();
+
+$summaryInput = '';
+$summaryError = $summaryResult = null;
+$savedSummaries = [];
+$summaryKey = is_string($_GET['samenvatting'] ?? null) ? $_GET['samenvatting'] : '';
+if (!$olderOnly) {
+    header('Cache-Control: no-store');
+    if ($requestMethod === 'POST') {
+        if (!in_array($_SERVER['HTTP_SEC_FETCH_SITE'] ?? 'none', ['none', 'same-origin'], true)) {
+            http_response_code(403);
+            exit('Open het dashboard om een samenvatting te maken.');
+        }
+
+        $summaryInput = is_string($_POST['app'] ?? null) ? trim($_POST['app']) : '';
+        try {
+            if (strlen($summaryInput) > 2000) {
+                throw new InvalidArgumentException('De App Store-link is te lang.');
+            }
+            set_time_limit(180);
+            [$country, $id] = appSummaryReference($summaryInput);
+            $app = lookupAppStoreListing($country, $id);
+            $model = selectAppSummaryModel();
+            $summary = generateAppSummary($app, $model);
+            saveAppSummary($databasePath, $country, $id, $app, $model, $summary);
+
+            $destination = dashboardUrl($comparisonWindow, $socialOnly, false, "$country-$id");
+            header("Location: $destination#app-samenvatting-resultaat", true, 303);
+            exit;
+        } catch (PDOException $exception) {
+            error_log($exception->getMessage());
+            $summaryError = 'De samenvatting kon niet worden opgeslagen. Controleer of PHP naar de SQLite-database kan schrijven.';
+        } catch (InvalidArgumentException | RuntimeException $exception) {
+            $summaryError = $exception->getMessage();
+        }
+    }
+}
+
 $error = null;
 $totals = [];
 $feeds = [];
@@ -152,7 +232,7 @@ try {
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
-    $db->exec('PRAGMA query_only = ON'); // This page only reads the database.
+    $db->exec('PRAGMA query_only = ON'); // Dashboard queries use a read-only connection.
     $db->exec('PRAGMA busy_timeout = 5000');
     $db->beginTransaction(); // Read all panels from a consistent database view.
 
@@ -418,6 +498,21 @@ try {
         : 'Het SQLite-bestand is niet gevonden. Controleer het databasepad in index.php.';
 }
 
+if (!$olderOnly && isset($db)) {
+    try {
+        $savedSummaries = listAppSummaries($db);
+        if ($savedSummaries !== [] && preg_match('/^([a-z]{2})-([1-9][0-9]{0,14})$/D', $summaryKey, $summaryParts)) {
+            $summaryResult = loadAppSummary($db, $summaryParts[1], $summaryParts[2]);
+        }
+    } catch (PDOException | JsonException $exception) {
+        error_log($exception->getMessage());
+        $summaryError ??= 'De opgeslagen samenvattingen konden niet worden geladen.';
+    }
+}
+if (!$olderOnly && $summaryKey !== '' && $summaryResult === null) {
+    $summaryError ??= 'Deze opgeslagen samenvatting is niet gevonden.';
+}
+
 $shownClimbers = $olderOnly ? array_values(array_filter($risingApps, static fn(array $app): bool =>
     $app['released_at'] !== null && substr($app['released_at'], 0, 10) < $ageCutoff)) : $risingApps;
 ?>
@@ -437,11 +532,10 @@ $shownClimbers = $olderOnly ? array_values(array_filter($risingApps, static fn(a
         <header class="masthead">
             <div class="masthead-top">
                 <div class="brand"><span class="brand-mark" aria-hidden="true"></span>OSINT</div>
-                <form method="get">
-                    <input type="hidden" name="window" value="<?= h($comparisonWindow) ?>">
-                    <?php if ($socialOnly): ?><input type="hidden" name="view" value="social"><?php endif; ?>
-                    <?php if ($olderOnly): ?><input type="hidden" name="tab" value="older"><?php endif; ?>
-                    <button type="submit">Overzicht vernieuwen</button>
+                <form method="post" id="import-form" action="<?= h($importDashboardUrl) ?>">
+                    <input type="hidden" name="action" value="import-trends">
+                    <input type="hidden" name="import_token" value="<?= h($importToken) ?>">
+                    <button type="submit">Gegevens bijwerken</button>
                 </form>
             </div>
             <div class="masthead-copy">
@@ -449,6 +543,83 @@ $shownClimbers = $olderOnly ? array_values(array_filter($risingApps, static fn(a
                 <p>Volg welke apps stijgen in de Nederlandse App Store en welke websites meer aandacht krijgen.</p>
             </div>
         </header>
+
+        <?php if ($importStatus !== []): ?>
+            <section class="import-status" aria-labelledby="import-status-title">
+                <h2 id="import-status-title">Resultaat van het bijwerken</h2>
+                <ul>
+                    <?php foreach ($importStatus as $message): ?>
+                        <li><?= h($message) ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </section>
+        <?php endif; ?>
+
+        <?php if (!$olderOnly): ?>
+            <section id="app-samenvatting" class="demo-panel" aria-labelledby="app-samenvatting-titel">
+                <h2 id="app-samenvatting-titel">App Store-samenvatting</h2>
+                <p id="demo-help" class="muted">Ollama vat de App Store-beschrijving samen. Het resultaat wordt automatisch opgeslagen.</p>
+                <form id="app-summary-form" method="post" action="<?= h(dashboardUrl($comparisonWindow, $socialOnly, false)) ?>#app-samenvatting">
+                    <label for="demo-app">App Store-link of app-ID</label>
+                    <div class="demo-form-row">
+                        <input id="demo-app" name="app" type="text" value="<?= h($summaryInput) ?>" maxlength="2000"
+                            placeholder="https://apps.apple.com/nl/app/…" aria-describedby="demo-help"
+                            required autocomplete="off" autocapitalize="none" spellcheck="false">
+                        <button type="submit">Maak samenvatting</button>
+                    </div>
+                    <p id="demo-status" role="status"></p>
+                </form>
+
+                <?php if ($summaryError !== null): ?>
+                    <div class="demo-message error" role="alert"><?= h($summaryError) ?></div>
+                <?php endif; ?>
+
+                <?php if ($summaryResult !== null): ?>
+                    <article id="app-samenvatting-resultaat" class="demo-result" aria-labelledby="demo-app-name" tabindex="-1">
+                        <header>
+                            <h3 id="demo-app-name"><?= h($summaryResult['app_name']) ?></h3>
+                            <?php if ($summaryResult['developer_name'] !== null && $summaryResult['developer_name'] !== ''): ?>
+                                <p class="muted"><?= h($summaryResult['developer_name']) ?></p>
+                            <?php endif; ?>
+                        </header>
+                        <div>
+                            <h4>Waarvoor dient de app?</h4>
+                            <p><?= h($summaryResult['summary']) ?></p>
+                        </div>
+                        <div>
+                            <h4>Belangrijkste functies</h4>
+                            <?php if ($summaryResult['capabilities'] === []): ?>
+                                <p>De App Store-beschrijving noemt geen concrete functies.</p>
+                            <?php else: ?>
+                                <ul>
+                                    <?php foreach ($summaryResult['capabilities'] as $capability): ?>
+                                        <li><?= h($capability) ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            <?php endif; ?>
+                        </div>
+                        <footer class="demo-source">
+                            <a href="https://apps.apple.com/<?= h($summaryResult['country_code']) ?>/app/id<?= h($summaryResult['app_id']) ?>">Bekijk in de App Store</a>
+                            <span class="muted">Ollama · <?= h($summaryResult['model']) ?> · <?= h(dutchDate($summaryResult['generated_at'])) ?></span>
+                        </footer>
+                    </article>
+                <?php endif; ?>
+
+                <?php if ($savedSummaries !== []): ?>
+                    <details class="demo-saved">
+                        <summary>Opgeslagen samenvattingen (<?= count($savedSummaries) ?>)</summary>
+                        <ul>
+                            <?php foreach ($savedSummaries as $savedSummary): ?>
+                                <li>
+                                    <a href="<?= h(dashboardUrl($comparisonWindow, $socialOnly, false, $savedSummary['summary_key'])) ?>#app-samenvatting-resultaat"<?= $savedSummary['summary_key'] === $summaryKey ? ' aria-current="true"' : '' ?>><?= h($savedSummary['app_name']) ?></a>
+                                    <span class="muted"> · <?= h(strtoupper($savedSummary['country_code'])) ?> · <?= h(dutchDate($savedSummary['generated_at'])) ?></span>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </details>
+                <?php endif; ?>
+            </section>
+        <?php endif; ?>
 
         <?php if ($error !== null): ?>
             <div class="error" role="alert">
@@ -710,7 +881,7 @@ $shownClimbers = $olderOnly ? array_values(array_filter($risingApps, static fn(a
             <?php if ($feeds === [] && $radarSnapshot === null): ?>
                 <div class="empty">
                     <h2>Nog geen gegevens</h2>
-                    <p>Voer <code>php import.php</code> uit en vernieuw daarna deze pagina.</p>
+                    <p>Klik bovenaan op <strong>Gegevens bijwerken</strong> om de eerste meting op te halen.</p>
                 </div>
             <?php endif; ?>
 
@@ -747,7 +918,7 @@ $shownClimbers = $olderOnly ? array_values(array_filter($risingApps, static fn(a
                         <?php if ($socialOnly && $snapshot !== false): ?>
                             <div class="empty">Er zijn in de laatste meting geen resultaten voor dit filter.</div>
                         <?php else: ?>
-                            <div class="empty">De laatste meting van deze bron bevat geen waarnemingen. Voer <code>php import.php</code> uit om gegevens op te halen.</div>
+                            <div class="empty">De laatste meting van deze bron bevat geen waarnemingen. Klik op <strong>Gegevens bijwerken</strong> voor een nieuwe meting.</div>
                         <?php endif; ?>
                     <?php elseif ($isApple): ?>
                         <div class="scroll" role="region" aria-label="Laatste ranglijst van de App Store" tabindex="0">
@@ -831,6 +1002,38 @@ $shownClimbers = $olderOnly ? array_values(array_filter($risingApps, static fn(a
             <?php endif; ?>
         <?php endif; ?>
     </main>
+    <script>
+        const importForm = document.querySelector('#import-form');
+        const importButton = importForm.querySelector('button');
+        const importButtonLabel = importButton.textContent;
+
+        importForm.addEventListener('submit', () => {
+            importButton.disabled = true;
+            importButton.textContent = 'Bezig met bijwerken…';
+        });
+
+        window.addEventListener('pageshow', () => {
+            importButton.disabled = false;
+            importButton.textContent = importButtonLabel;
+        });
+    </script>
+    <?php if (!$olderOnly): ?>
+        <script>
+            const summaryForm = document.querySelector('#app-summary-form');
+            const summaryButton = summaryForm.querySelector('button');
+            const summaryStatus = document.querySelector('#demo-status');
+
+            summaryForm.addEventListener('submit', () => {
+                summaryButton.disabled = true;
+                summaryStatus.textContent = 'Appgegevens ophalen en samenvatting maken…';
+            });
+
+            window.addEventListener('pageshow', () => {
+                summaryButton.disabled = false;
+                summaryStatus.textContent = '';
+            });
+        </script>
+    <?php endif; ?>
 </body>
 
 </html>
