@@ -626,6 +626,116 @@ a:hover {
     outline-color: #fff;
 }
 
+.demo-panel {
+    padding: clamp(18px, 4vw, 30px);
+    overflow-wrap: anywhere;
+    scroll-margin-top: 14px;
+}
+
+.demo-panel form,
+.demo-message {
+    margin-top: 16px;
+}
+
+.demo-panel label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 700;
+}
+
+.demo-form-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+}
+
+.demo-form-row input {
+    width: 100%;
+    border: 1px solid #9aadc4;
+    border-radius: 9px;
+    padding: 11px 12px;
+    background: var(--surface);
+    color: var(--ink);
+    font: inherit;
+}
+
+.demo-form-row input:focus-visible {
+    outline: 2px solid #426dba;
+    outline-offset: 2px;
+}
+
+.demo-form-row button {
+    min-height: 44px;
+    font-size: .95rem;
+}
+
+.demo-form-row button:disabled {
+    background: #f5e5b9;
+    cursor: wait;
+}
+
+.demo-panel p {
+    margin-top: 6px;
+}
+
+#demo-status:empty {
+    margin: 0;
+}
+
+.demo-panel .muted {
+    font-size: .875rem;
+}
+
+.demo-result {
+    display: grid;
+    gap: 16px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    scroll-margin-top: 14px;
+}
+
+.demo-result h3 {
+    font-size: 1.35rem;
+}
+
+.demo-result h4 {
+    margin: 0;
+}
+
+.demo-result ul,
+.demo-saved ul {
+    margin: 6px 0 0;
+    padding-inline-start: 21px;
+    line-height: 1.55;
+}
+
+.demo-result li + li,
+.demo-saved li + li {
+    margin-top: 4px;
+}
+
+.demo-source {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+}
+
+.demo-saved {
+    margin-top: 20px;
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+}
+
+.demo-saved summary {
+    width: fit-content;
+    color: var(--blue);
+    font-weight: 650;
+    cursor: pointer;
+}
+
 .trends {
     border-top: 1px solid var(--line);
 }
@@ -691,6 +801,10 @@ section .empty {
 
     .masthead {
         border-radius: 16px;
+    }
+
+    .demo-form-row {
+        grid-template-columns: 1fr;
     }
 
     .hotspot-column {

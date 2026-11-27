@@ -14,7 +14,8 @@
         <header class="masthead">
             <div class="masthead-top">
                 <div class="brand"><span class="brand-mark" aria-hidden="true"></span>OSINT</div>
-                <form method="post" id="import-form" action="<?= h($dashboardUrl) ?>">
+                <form method="post" id="import-form" action="<?= h($importDashboardUrl) ?>">
+                    <input type="hidden" name="action" value="import-trends">
                     <input type="hidden" name="import_token" value="<?= h($importToken) ?>">
                     <button type="submit">Gegevens bijwerken</button>
                 </form>
@@ -34,6 +35,10 @@
                     <?php endforeach; ?>
                 </ul>
             </section>
+        <?php endif; ?>
+
+        <?php if (!$olderOnly): ?>
+            <?php require __DIR__ . '/partials/app-summary.php'; ?>
         <?php endif; ?>
 
         <?php if ($error !== null): ?>
@@ -81,6 +86,23 @@
             importButton.textContent = 'Gegevens bijwerken';
         });
     </script>
+    <?php if (!$olderOnly): ?>
+        <script>
+            const summaryForm = document.getElementById('app-summary-form');
+            const summaryButton = summaryForm.querySelector('button');
+            const summaryStatus = document.getElementById('demo-status');
+
+            summaryForm.addEventListener('submit', () => {
+                summaryButton.disabled = true;
+                summaryStatus.textContent = 'Appgegevens ophalen en samenvatting maken…';
+            });
+
+            window.addEventListener('pageshow', () => {
+                summaryButton.disabled = false;
+                summaryStatus.textContent = '';
+            });
+        </script>
+    <?php endif; ?>
 </body>
 
 </html>

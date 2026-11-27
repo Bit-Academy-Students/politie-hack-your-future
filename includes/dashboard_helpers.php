@@ -15,12 +15,13 @@ $olderOnly = ($_GET['tab'] ?? null) === 'older';
 $ageCutoff = (new DateTimeImmutable('today', new DateTimeZone('Europe/Amsterdam')))
     ->sub(new DateInterval('P7Y'))->format('Y-m-d');
 
-function dashboardUrl(string $window, bool $socialOnly, bool $olderOnly): string
+function dashboardUrl(string $window, bool $socialOnly, bool $olderOnly, ?string $summaryKey = null): string
 {
     return '?' . http_build_query(array_filter([
         'window' => $window,
         'view' => $socialOnly ? 'social' : null,
         'tab' => $olderOnly ? 'older' : null,
+        'samenvatting' => $summaryKey,
     ]));
 }
 
