@@ -14,11 +14,9 @@
         <header class="masthead">
             <div class="masthead-top">
                 <div class="brand"><span class="brand-mark" aria-hidden="true"></span>OSINT</div>
-                <form method="get">
-                    <input type="hidden" name="window" value="<?= h($comparisonWindow) ?>">
-                    <?php if ($socialOnly): ?><input type="hidden" name="view" value="social"><?php endif; ?>
-                    <?php if ($olderOnly): ?><input type="hidden" name="tab" value="older"><?php endif; ?>
-                    <button type="submit">Overzicht vernieuwen</button>
+                <form method="post" id="import-form" action="<?= h($dashboardUrl) ?>">
+                    <input type="hidden" name="import_token" value="<?= h($importToken) ?>">
+                    <button type="submit">Gegevens bijwerken</button>
                 </form>
             </div>
             <div class="masthead-copy">
@@ -26,6 +24,17 @@
                 <p>Volg welke apps stijgen in de Nederlandse App Store en welke websites meer aandacht krijgen.</p>
             </div>
         </header>
+
+        <?php if ($importStatus !== []): ?>
+            <section class="import-status" aria-labelledby="import-status-title">
+                <h2 id="import-status-title">Resultaat van het bijwerken</h2>
+                <ul>
+                    <?php foreach ($importStatus as $message): ?>
+                        <li><?= h($message) ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </section>
+        <?php endif; ?>
 
         <?php if ($error !== null): ?>
             <div class="error" role="alert">
@@ -58,6 +67,20 @@
             <?php endif; ?>
         <?php endif; ?>
     </main>
+    <script>
+        const importForm = document.getElementById('import-form');
+        const importButton = importForm.querySelector('button');
+
+        importForm.addEventListener('submit', () => {
+            importButton.disabled = true;
+            importButton.textContent = 'Bezig met bijwerken…';
+        });
+
+        window.addEventListener('pageshow', () => {
+            importButton.disabled = false;
+            importButton.textContent = 'Gegevens bijwerken';
+        });
+    </script>
 </body>
 
 </html>

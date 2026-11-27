@@ -431,11 +431,8 @@ function importCloudflareRadar(PDO $db): int
     }
 }
 
-// Run the imports from the command line: php import.php
-// Requiring this file from another PHP script only defines the import functions.
-if (PHP_SAPI === 'cli' && realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
-    // EDIT THIS to point to the SQLite database you already created.
-    $databasePath = __DIR__ . '/trends.sqlite';
+function importTrends(string $databasePath): array
+{
     if (!is_file($databasePath)) {
         throw new RuntimeException('SQLite database not found: ' . $databasePath);
     }
@@ -445,17 +442,35 @@ if (PHP_SAPI === 'cli' && realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE
     $db->exec('PRAGMA foreign_keys = ON');
     $db->exec('PRAGMA busy_timeout = 5000');
 
-    $failed = false;
-    $imports = ['importAppleApps', 'importGoogleTrends', 'importSteamPlayers'];
+    $imports = [
+        'importAppleApps' => 'App Store',
+        'importGoogleTrends' => 'Google Trends',
+        'importSteamPlayers' => 'Steam',
+    ];
     if (trim((string) getenv('CLOUDFLARE_API_TOKEN')) !== '') {
-        $imports[] = 'importCloudflareRadar';
+        $imports['importCloudflareRadar'] = 'Cloudflare Radar';
     }
-    foreach ($imports as $import) {
+
+    $results = [];
+    foreach ($imports as $import => $source) {
         try {
-            echo $import . ': imported ' . $import($db) . " items.\n";
+            $results[$import] = ['source' => $source, 'count' => $import($db), 'error' => null];
         } catch (Throwable $error) {
+            $results[$import] = ['source' => $source, 'count' => null, 'error' => $error->getMessage()];
+        }
+    }
+    return $results;
+}
+
+// Run the imports from the command line: php import.php
+if (PHP_SAPI === 'cli' && realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
+    $failed = false;
+    foreach (importTrends(__DIR__ . '/trends.sqlite') as $import => $result) {
+        if ($result['error'] !== null) {
             $failed = true;
-            echo $import . ': FAILED - ' . $error->getMessage() . "\n";
+            echo $import . ': FAILED - ' . $result['error'] . "\n";
+        } else {
+            echo $import . ': imported ' . $result['count'] . " items.\n";
         }
     }
     exit($failed ? 1 : 0);
